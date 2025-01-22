@@ -56,38 +56,48 @@ pub mod Api {
                 // ("start", start.to_string()),
                 // ("size", size.to_string()),
             ];
-            let url = Url::parse_with_params(Self::REST_URL, params)?;
-            let url = url.to_string().replace("+", "%20");
-            let client = reqwest::Client::new();
-            let response = client
-                .get(url)
-                .header("accept", accept_header)
-                .send()
-                .await?;
-            if response.status().is_success() {
-                let json_text: String = response.text().await?;
-                let deserialized: OmicsDiResponse = serde_json::from_str(&json_text)?;
-                Ok(deserialized)
-            } else {
-                Err(Box::from(format!(
-                    "Failed to fetch data: {}",
-                    response.status()
-                )))
+            let url = Url::parse_with_params(Self::REST_URL, params);
+            match url {
+                Ok(url) => {
+                    let url = url.to_string().replace("+", "%20");
+                    dbg!(&url);
+                    let client = reqwest::Client::new();
+                    let response = client
+                        .get(url)
+                        .header("accept", accept_header)
+                        .send()
+                        .await?;
+                    if response.status().is_success() {
+                        let json_text: String = response.text().await?;
+
+                        let deserialized: OmicsDiResponse = serde_json::from_str(&json_text)?;
+                        Ok(deserialized)
+                    } else {
+                        Err(Box::from(format!(
+                            "Failed to fetch data: {}",
+                            response.status()
+                        )))
+                    }
+                }
+                Err(e) => Err(Box::from(format!("The url could not be made"))),
             }
         }
     }
 }
 
 pub mod data {
+    use serde::Serializer;
     /// The link to the dataset enpoint
     use serde::{Deserialize, Serialize};
     use std::error::Error;
 
+    use serde::de::{self, Deserializer};
+
     #[derive(Deserialize, Serialize, Debug, Clone)]
     pub struct OmicsDiResponse {
         pub count: u64,
-        pub datasets: Vec<DataSet>,
-        pub facets: Vec<Facet>,
+        pub datasets: Option<Vec<DataSet>>,
+        pub facets: Option<Vec<Facet>>,
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -96,9 +106,9 @@ pub mod data {
         pub source: String,
         pub title: String,
         pub description: Option<String>,
-        pub organisms: Vec<Organism>,
+        pub organisms: Option<Vec<Organism>>,
         pub publicationDate: Option<String>,
-        pub omicsType: Vec<String>,
+        pub omicsType: Option<Vec<String>>,
         pub citationsCount: Option<u64>,
     }
 
@@ -113,18 +123,24 @@ pub mod data {
         pub id: String,
         pub label: String,
         pub total: u64,
-        pub facetValues: Vec<FacetValue>,
+        pub facetValues: Option<Vec<FacetValue>>,
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
     pub struct FacetValue {
         pub label: String,
         pub value: String,
-        #[serde(deserialize_with = "string_to_u64")]
+        #[serde(deserialize_with = "string_to_u64", serialize_with = "u64_to_string")]
         pub count: u64,
     }
 
-    use serde::de::{self, Deserializer};
+    /// Custom serializer for converting a u64 to a string
+    fn u64_to_string<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&value.to_string())
+    }
 
     fn string_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
     where
@@ -147,7 +163,8 @@ mod tests {
         let q: String = "TAXONOMY: 164328 AND omics_type:Transcriptomics".into();
         let mut query = x.query(q).build()?;
         let mut results = query.search().await?;
-        let first_identifier = results.datasets.pop().unwrap().id;
+        let first_identifier = results.datasets.unwrap().pop().unwrap().id;
+        dbg!(first_identifier.clone());
         assert_eq!(first_identifier, "E-GEOD-50033");
         Ok(())
     }

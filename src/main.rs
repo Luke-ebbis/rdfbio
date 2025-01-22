@@ -1,5 +1,6 @@
 use clap::Parser;
 use rdfbio::biordf;
+use rdfbio::biordf::Omicsdi::Api::SearchBuilder;
 use std::error::Error;
 use std::path::PathBuf;
 use tokio;
@@ -15,8 +16,11 @@ struct Args {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    // let out = biordf::Omicsdi::DataSet::search(args.input).await.unwrap();
-    // print!("{:?}", out.clone().datasets.pop().unwrap().id);
-    // let json = serde_json::to_string(&out).unwrap();
-    // print!("{}", json);
+    let mut x = SearchBuilder::default();
+    let q: String = args.input.into();
+    print!("{}", q);
+    let mut query = x.query(q).build().unwrap();
+    let mut results = query.search().await.unwrap();
+    let json = serde_json::to_string(&results).unwrap();
+    print!("{}", json);
 }
