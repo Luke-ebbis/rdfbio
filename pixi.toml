@@ -1,0 +1,9 @@
+[project]
+authors = ["Sibbe Bakker <s.l.bakker@uu.nl>"]
+channels = ["conda-forge"]
+description = "Add a short description here"
+name = "rdf-bio"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
