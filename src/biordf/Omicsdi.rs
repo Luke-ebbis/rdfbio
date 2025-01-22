@@ -1,5 +1,6 @@
+#[allow(non_snake_case)]
 pub mod Api {
-    use crate::biordf::Omicsdi::data::DataSet;
+
     use crate::biordf::Omicsdi::data::OmicsDiResponse;
     use derive_builder::Builder;
     use reqwest::{self, Url};
@@ -79,7 +80,7 @@ pub mod Api {
                         )))
                     }
                 }
-                Err(e) => Err(Box::from(format!("The url could not be made"))),
+                Err(e) => Err(Box::from("The url could not be made".to_string())),
             }
         }
     }

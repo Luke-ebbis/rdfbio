@@ -1,9 +1,5 @@
 use clap::Parser;
-use rdfbio::biordf;
 use rdfbio::biordf::Omicsdi::Api::SearchBuilder;
-use std::error::Error;
-use std::path::PathBuf;
-use tokio;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -17,10 +13,10 @@ struct Args {
 async fn main() {
     let args = Args::parse();
     let mut x = SearchBuilder::default();
-    let q: String = args.input.into();
+    let q: String = args.input;
     print!("{}", q);
-    let mut query = x.query(q).build().unwrap();
-    let mut results = query.search().await.unwrap();
+    let query = x.query(q).build().unwrap();
+    let results = query.search().await.unwrap();
     let json = serde_json::to_string(&results).unwrap();
     print!("{}", json);
 }
