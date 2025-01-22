@@ -1,18 +1,18 @@
 pub mod DataSet {
     /// The link to the dataset enpoint
     const REST_URL: &str = "https://www.omicsdi.org/ws/dataset/search";
-    use reqwest;
+    use reqwest::{self, Url};
     use serde::{Deserialize, Serialize};
     use std::error::Error;
 
-    #[derive(Deserialize, Debug, Clone)]
+    #[derive(Deserialize, Serialize, Debug, Clone)]
     pub struct OmicsDiResponse {
         pub count: u64,
         pub datasets: Vec<DataSet>,
         pub facets: Vec<Facet>,
     }
 
-    #[derive(Deserialize, Debug, Clone)]
+    #[derive(Deserialize, Serialize, Debug, Clone)]
     pub struct DataSet {
         pub id: String,
         pub source: String,
@@ -24,13 +24,13 @@ pub mod DataSet {
         pub citationsCount: Option<u64>,
     }
 
-    #[derive(Deserialize, Debug, Clone)]
+    #[derive(Deserialize, Serialize, Debug, Clone)]
     pub struct Organism {
         pub acc: Option<String>,
         pub name: String,
     }
 
-    #[derive(Deserialize, Debug, Clone)]
+    #[derive(Deserialize, Serialize, Debug, Clone)]
     pub struct Facet {
         pub id: String,
         pub label: String,
@@ -38,7 +38,7 @@ pub mod DataSet {
         pub facetValues: Vec<FacetValue>,
     }
 
-    #[derive(Deserialize, Debug, Clone)]
+    #[derive(Deserialize, Serialize, Debug, Clone)]
     pub struct FacetValue {
         pub label: String,
         pub value: String,
@@ -56,17 +56,23 @@ pub mod DataSet {
         s.parse::<u64>().map_err(de::Error::custom)
     }
 
+    /// Search the OmicsDi database with a search string.
+    ///
     pub async fn search(x: String) -> Result<OmicsDiResponse, Box<dyn std::error::Error>> {
         let accept_header = "application/json";
-        let query_url = format!(
-            "{}?query={}&start=2&size=4",
-            REST_URL,
-            x, // args.start, args.size
-        );
-
+        let start = 1;
+        let size = 2;
+        let params = [
+            ("query", x),
+            ("start", start.to_string()),
+            ("size", size.to_string()),
+        ];
+        let url = Url::parse_with_params(REST_URL, params)?;
+        let url = url.to_string().replace("+", "%20");
+        dbg!(&url);
         let client = reqwest::Client::new();
         let response = client
-            .get(query_url)
+            .get(url)
             .header("accept", accept_header)
             .send()
             .await?;
@@ -92,9 +98,7 @@ mod tests {
     use super::*;
     #[tokio::test]
     async fn test_input() -> Result<(), Box<dyn Error>> {
-        let x: String =
-            "TAXONOMY%3A%204787%20AND%20omics_type%3A%20Transcriptomics GSE13580&start=0&size=2"
-                .into();
+        let x: String = "TAXONOMY: 164328 AND omics_type:Transcriptomics".into();
         let search_string = x;
         let mut result = search(search_string).await?;
         assert_eq!("E-GEOD-13580", result.datasets.pop().unwrap().id);

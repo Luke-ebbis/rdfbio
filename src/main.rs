@@ -17,4 +17,6 @@ async fn main() {
     let args = Args::parse();
     let out = biordf::Omicsdi::DataSet::search(args.input).await.unwrap();
     print!("{:?}", out.clone().datasets.pop().unwrap().id);
+    let json = serde_json::to_string(&out).unwrap();
+    print!("{}", json);
 }
