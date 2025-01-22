@@ -102,10 +102,15 @@ pub mod data {
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
+    // #[ld(prefix("ex" = "http://example.org/"))]
     pub struct DataSet {
+        // #[ld(id)]
         pub id: String,
+        // #[ld("ex:source")]
         pub source: String,
+        // #[ld("ex:title")]
         pub title: String,
+        // #[ld("ex:title")]
         pub description: Option<String>,
         pub organisms: Option<Vec<Organism>>,
         pub publicationDate: Option<String>,
@@ -164,9 +169,67 @@ mod tests {
         let q: String = "TAXONOMY: 164328 AND omics_type:Transcriptomics".into();
         let mut query = x.query(q).build()?;
         let mut results = query.search().await?;
-        let first_identifier = results.datasets.unwrap().pop().unwrap().id;
+        let first_identifier = results.clone().datasets.unwrap().pop().unwrap().id;
         dbg!(first_identifier.clone());
         assert_eq!(first_identifier, "E-GEOD-50033");
+
+        let first_dataset = results.datasets.unwrap().pop().unwrap();
+        // let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &first_dataset);
+
         Ok(())
+    }
+    use linked_data::iref::IriBuf;
+    use linked_data::rdf_types::RdfDisplay;
+    use rdf_types::iref::Iri;
+    use rdf_types::static_iref::iri;
+
+    #[test]
+    fn test_ld() -> () {
+        #[derive(linked_data::Serialize, linked_data::Deserialize)]
+        #[ld(prefix("ex" = "http://example.org/"))]
+        struct Foo {
+            #[ld(id)]
+            id: IriBuf,
+
+            #[ld("ex:name")]
+            name: String,
+
+            #[ld("ex:email")]
+            email: String,
+
+            #[ld("ex:numbers")]
+            numbers: Vec<i64>,
+            #[ld("ex:maybe")]
+            maybe: Option<String>,
+            #[ld("ex:alot")]
+            alot: Vec<Nested>,
+        }
+
+        #[derive(linked_data::Serialize, linked_data::Deserialize)]
+        #[ld(prefix("ex" = "http://example.org/"))]
+        #[ld(type = "ex:object")]
+        struct Nested {
+            #[ld("ex:num")]
+            m: i64,
+        }
+
+        let value = Foo {
+            id: iri!("http://example.org/JohnSmith").to_owned(),
+            name: "John Smith".to_owned(),
+            email: "john.smith@example.org".to_owned(),
+            numbers: vec![1, 133],
+            maybe: Some("S".into()),
+            alot: vec![Nested { m: 10 }],
+        };
+
+        let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &value)
+            .expect("RDF serialization failed");
+
+        dbg!(&quads);
+
+        for quad in quads {
+            use rdf_types::RdfDisplay;
+            println!("{} .", quad.rdf_display())
+        }
     }
 }
