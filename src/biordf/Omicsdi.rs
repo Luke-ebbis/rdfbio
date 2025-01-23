@@ -266,8 +266,8 @@ mod tests {
     async fn test_pre_search_validation_errors() -> () {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
-        let query = x.query(q).start(19).size(5).build().unwrap();
-        // let res = query.search().await.unwrap();
+        // This is invalid and should not be allowed.
+        let _ = x.query(q).start(19).size(5).build().unwrap();
     }
 
     #[test]
@@ -300,7 +300,7 @@ mod tests {
             m: i64,
         }
 
-        let value = Foo {
+        let _value = Foo {
             id: iri!("http://example.org/JohnSmith").to_owned(),
             name: "John Smith".to_owned(),
             email: "john.smith@example.org".to_owned(),
