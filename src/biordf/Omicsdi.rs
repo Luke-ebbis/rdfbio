@@ -31,16 +31,38 @@ pub mod Api {
     /// Search the OmicsDI rest endpoint
     ///
     /// Documentation for the parameters is copied from there.
-    #[derive(Builder)]
+    #[derive(Builder, Default, Debug, PartialEq)]
+    #[builder(build_fn(validate = "Self::validate"))]
     pub struct Search {
         // domain: Domain,
         /// General search term against multiple fields including, e.g: cancer human
         query: String,
         // /// Field to sort the output of the search results, e.g: id, publication_date
+        #[builder(setter(into), default = "0")]
         // sort: Option<Field>,
-        // start: Option<u32>,
-        // end: Option<u32>,
+        /// The start of the query.
+        start: i32,
+        /// Size of the return
+        #[builder(setter(into), default = "2")]
+        size: i32,
         // order: Option<Order>,
+    }
+
+    impl SearchBuilder {
+        /// Check that the size of the query is smaller than the start.
+        /// This is to conform to the ENA api requirements.
+        fn validate(&self) -> Result<(), String> {
+            let start = self.start.unwrap_or_default();
+            let size = self.size.unwrap_or(2);
+            if size <= start {
+                Err(String::from(format!(
+                    "Start {} must be smaller than the size of the query {}",
+                    start, size
+                )))
+            } else {
+                Ok(())
+            }
+        }
     }
 
     impl Search {
@@ -52,13 +74,14 @@ pub mod Api {
         ) -> Result<OmicsDiResponse, Box<dyn std::error::Error>> {
             let accept_header = "application/json";
             let x = self.query;
-            let start = 1;
-            let size = 2;
-            let params = [
+            let start = self.start;
+            let size = self.size;
+            let mut params = [
                 ("query", x),
-                // ("start", start.to_string()),
-                // ("size", size.to_string()),
+                ("start", start.to_string()),
+                ("size", size.to_string()),
             ];
+            dbg!(self.start);
             let url = Url::parse_with_params(Self::REST_URL, params);
             match url {
                 Ok(url) => {
@@ -219,14 +242,13 @@ mod tests {
     #[tokio::test]
     async fn test_input() -> Result<(), Box<dyn Error>> {
         let mut x = SearchBuilder::default();
-        let q: String =
-            "TAXONOMY: 164328 AND omics_type:Transcriptomics".into();
+        let q: String = "E-GEOD-5003".into();
         let mut query = x.query(q).build()?;
         let mut results = query.search().await?;
         let first_identifier =
             results.clone().datasets.unwrap().pop().unwrap().id;
         dbg!(first_identifier.clone());
-        assert_eq!(first_identifier, "http://example.org/E-GEOD-50033");
+        assert_eq!(first_identifier, "http://example.org/E-GEOD-5003");
 
         let first_dataset = results.datasets.unwrap().pop().unwrap();
         let quads = linked_data::to_quads(
@@ -239,6 +261,15 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[should_panic]
+    #[tokio::test]
+    async fn test_pre_search_validation_errors() -> () {
+        let mut x = SearchBuilder::default();
+        let q: String = "E-GEOD-5003".into();
+        let query = x.query(q).start(19).size(5).build().unwrap();
+        // let res = query.search().await.unwrap();
     }
 
     #[test]
