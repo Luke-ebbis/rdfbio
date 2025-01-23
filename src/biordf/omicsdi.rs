@@ -5,7 +5,7 @@ pub mod api {
 
     #![allow(non_snake_case)]
     #![allow(non_camel_case_types)]
-    use crate::biordf::Omicsdi::data::OmicsDiResponse;
+    use crate::biordf::omicsdi::data::OmicsDiResponse;
     use derive_builder::Builder;
     use reqwest::{self, Url};
 
@@ -243,7 +243,7 @@ mod tests {
     #![allow(non_camel_case_types)]
     use std::error::Error;
 
-    use crate::biordf::Omicsdi::api::SearchBuilder;
+    use crate::biordf::omicsdi::api::SearchBuilder;
 
     use linked_data::iref::IriBuf;
 

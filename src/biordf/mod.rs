@@ -1,1 +1,1 @@
-pub mod Omicsdi;
+pub mod omicsdi;
