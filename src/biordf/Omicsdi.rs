@@ -232,18 +232,17 @@ mod tests {
     use std::error::Error;
 
     use crate::biordf::Omicsdi::Api::SearchBuilder;
-    use iref::uri::QueryBuf;
+
     use linked_data::iref::IriBuf;
-    use linked_data::rdf_types::RdfDisplay;
-    use rdf_types::iref::Iri;
+
     use rdf_types::static_iref::iri;
 
     #[tokio::test]
     async fn test_input() -> Result<(), Box<dyn Error>> {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
-        let mut query = x.query(q).build()?;
-        let mut results = query.search().await?;
+        let query = x.query(q).build()?;
+        let results = query.search().await?;
         let first_identifier =
             results.clone().datasets.unwrap().pop().unwrap().id;
         dbg!(first_identifier.clone());
@@ -309,10 +308,6 @@ mod tests {
             maybe: Some("S".into()),
             alot: vec![Nested { m: 10 }],
         };
-
-        let quads =
-            linked_data::to_quads(rdf_types::generator::Blank::new(), &value)
-                .expect("RDF serialization failed");
 
         // for quad in quads {
         //     use rdf_types::RdfDisplay;
