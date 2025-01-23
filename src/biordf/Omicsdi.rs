@@ -47,7 +47,9 @@ pub mod Api {
         const REST_URL: &str = "https://www.omicsdi.org/ws/dataset/search";
         /// Search the OmicsDi database with a search string.
         ///
-        pub async fn search(self) -> Result<OmicsDiResponse, Box<dyn std::error::Error>> {
+        pub async fn search(
+            self
+        ) -> Result<OmicsDiResponse, Box<dyn std::error::Error>> {
             let accept_header = "application/json";
             let x = self.query;
             let start = 1;
@@ -71,7 +73,8 @@ pub mod Api {
                     if response.status().is_success() {
                         let json_text: String = response.text().await?;
 
-                        let deserialized: OmicsDiResponse = serde_json::from_str(&json_text)?;
+                        let deserialized: OmicsDiResponse =
+                            serde_json::from_str(&json_text)?;
                         Ok(deserialized)
                     } else {
                         Err(Box::from(format!(
@@ -80,20 +83,22 @@ pub mod Api {
                         )))
                     }
                 }
-                Err(e) => Err(Box::from("The url could not be made".to_string())),
+                Err(e) => {
+                    Err(Box::from("The url could not be made".to_string()))
+                }
             }
         }
     }
 }
 
 pub mod data {
+    use iref::{IriBuf, UriBuf};
     use serde::Serializer;
     /// The link to the dataset enpoint
     use serde::{Deserialize, Serialize};
     use std::error::Error;
 
     use serde::de::{self, Deserializer};
-
     #[derive(Deserialize, Serialize, Debug, Clone)]
     pub struct OmicsDiResponse {
         pub count: u64,
@@ -101,20 +106,36 @@ pub mod data {
         pub facets: Option<Vec<Facet>>,
     }
 
-    #[derive(Deserialize, Serialize, Debug, Clone)]
-    // #[ld(prefix("ex" = "http://example.org/"))]
+    #[derive(
+        serde::Serialize,
+        serde::Deserialize,
+        linked_data::Serialize,
+        linked_data::Deserialize,
+        Clone,
+        Debug,
+    )]
+    #[ld(prefix("ex" = "http://example.org/"))]
+    #[ld(type = "ex:OmicDiDataSet")]
     pub struct DataSet {
-        // #[ld(id)]
-        pub id: String,
-        // #[ld("ex:source")]
+        #[ld(id)]
+        #[serde(
+            deserialize_with = "string_to_uri",
+            serialize_with = "uri_to_string"
+        )]
+        pub id: IriBuf,
+        #[ld("ex:source")]
         pub source: String,
-        // #[ld("ex:title")]
+        #[ld("ex:title")]
         pub title: String,
-        // #[ld("ex:title")]
+        #[ld("ex:description")]
         pub description: Option<String>,
+        #[ld(ignore)]
         pub organisms: Option<Vec<Organism>>,
+        #[ld(ignore)]
         pub publicationDate: Option<String>,
+        #[ld(ignore)]
         pub omicsType: Option<Vec<String>>,
+        #[ld("ex:citations")]
         pub citationsCount: Option<u64>,
     }
 
@@ -136,12 +157,18 @@ pub mod data {
     pub struct FacetValue {
         pub label: String,
         pub value: String,
-        #[serde(deserialize_with = "string_to_u64", serialize_with = "u64_to_string")]
+        #[serde(
+            deserialize_with = "string_to_u64",
+            serialize_with = "u64_to_string"
+        )]
         pub count: u64,
     }
 
     /// Custom serializer for converting a u64 to a string
-    fn u64_to_string<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
+    fn u64_to_string<S>(
+        value: &u64,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -155,6 +182,27 @@ pub mod data {
         let s = String::deserialize(deserializer)?;
         s.parse::<u64>().map_err(de::Error::custom)
     }
+
+    use rdf_types::static_iref::iri;
+    /// Making a uri
+    fn string_to_uri<'de, D>(deserializer: D) -> Result<IriBuf, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let st = format!("http://example.org/{}", s);
+        IriBuf::new(st).map_err(de::Error::custom)
+    }
+    /// Making a string
+    fn uri_to_string<S>(
+        value: &IriBuf,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(value.as_str())
+    }
 }
 
 #[cfg(test)]
@@ -162,26 +210,36 @@ mod tests {
     use std::error::Error;
 
     use crate::biordf::Omicsdi::Api::SearchBuilder;
-
-    #[tokio::test]
-    async fn test_input() -> Result<(), Box<dyn Error>> {
-        let mut x = SearchBuilder::default();
-        let q: String = "TAXONOMY: 164328 AND omics_type:Transcriptomics".into();
-        let mut query = x.query(q).build()?;
-        let mut results = query.search().await?;
-        let first_identifier = results.clone().datasets.unwrap().pop().unwrap().id;
-        dbg!(first_identifier.clone());
-        assert_eq!(first_identifier, "E-GEOD-50033");
-
-        let first_dataset = results.datasets.unwrap().pop().unwrap();
-        // let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &first_dataset);
-
-        Ok(())
-    }
+    use iref::uri::QueryBuf;
     use linked_data::iref::IriBuf;
     use linked_data::rdf_types::RdfDisplay;
     use rdf_types::iref::Iri;
     use rdf_types::static_iref::iri;
+
+    #[tokio::test]
+    async fn test_input() -> Result<(), Box<dyn Error>> {
+        let mut x = SearchBuilder::default();
+        let q: String =
+            "TAXONOMY: 164328 AND omics_type:Transcriptomics".into();
+        let mut query = x.query(q).build()?;
+        let mut results = query.search().await?;
+        let first_identifier =
+            results.clone().datasets.unwrap().pop().unwrap().id;
+        dbg!(first_identifier.clone());
+        assert_eq!(first_identifier, "http://example.org/E-GEOD-50033");
+
+        let first_dataset = results.datasets.unwrap().pop().unwrap();
+        let quads = linked_data::to_quads(
+            rdf_types::generator::Blank::new(),
+            &first_dataset,
+        )?;
+        for quad in quads {
+            use rdf_types::RdfDisplay;
+            println!("{} .", quad.rdf_display())
+        }
+
+        Ok(())
+    }
 
     #[test]
     fn test_ld() -> () {
@@ -222,14 +280,13 @@ mod tests {
             alot: vec![Nested { m: 10 }],
         };
 
-        let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &value)
-            .expect("RDF serialization failed");
+        let quads =
+            linked_data::to_quads(rdf_types::generator::Blank::new(), &value)
+                .expect("RDF serialization failed");
 
-        dbg!(&quads);
-
-        for quad in quads {
-            use rdf_types::RdfDisplay;
-            println!("{} .", quad.rdf_display())
-        }
+        // for quad in quads {
+        //     use rdf_types::RdfDisplay;
+        //     println!("{} .", quad.rdf_display())
+        // }
     }
 }
