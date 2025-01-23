@@ -15,7 +15,9 @@ pub mod api {
         omics,
         /// The Pride database
         pride,
+        /// The massive domain.
         MassIVE,
+        /// JPost domain.
         jpost,
     }
 
@@ -90,12 +92,10 @@ pub mod api {
                 ("start", start.to_string()),
                 ("size", size.to_string()),
             ];
-            dbg!(self.start);
             let url = Url::parse_with_params(Self::REST_URL, params);
             match url {
                 Ok(url) => {
                     let url = url.to_string().replace("+", "%20");
-                    dbg!(&url);
                     let client = reqwest::Client::new();
                     let response = client
                         .get(url)
@@ -245,6 +245,7 @@ mod tests {
 
     use crate::biordf::omicsdi::api::SearchBuilder;
 
+    use crate::biordf::core::data::ToRDF;
     use linked_data::iref::IriBuf;
 
     use rdf_types::static_iref::iri;
@@ -261,15 +262,6 @@ mod tests {
         assert_eq!(first_identifier, "http://example.org/E-GEOD-5003");
 
         let first_dataset = results.datasets.unwrap().pop().unwrap();
-        let quads = linked_data::to_quads(
-            rdf_types::generator::Blank::new(),
-            &first_dataset,
-        )?;
-        for quad in quads {
-            use rdf_types::RdfDisplay;
-            println!("{} .", quad.rdf_display())
-        }
-
         Ok(())
     }
 
