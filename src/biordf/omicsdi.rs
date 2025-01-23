@@ -1,7 +1,10 @@
-#![allow(non_snake_case)]
-#![allow(non_camel_case_types)]
-pub mod Api {
+/// Using the endpoint, access the datasets.
+pub mod access {}
 
+pub mod api {
+
+    #![allow(non_snake_case)]
+    #![allow(non_camel_case_types)]
     use crate::biordf::Omicsdi::data::OmicsDiResponse;
     use derive_builder::Builder;
     use reqwest::{self, Url};
@@ -29,7 +32,7 @@ pub mod Api {
         descending,
     }
 
-    /// Search the OmicsDI rest endpoint
+    /// Search the OmicsDI rest database endpoint
     ///
     /// Documentation for the parameters is copied from there.
     #[derive(Builder, Default, Debug, PartialEq)]
@@ -55,13 +58,18 @@ pub mod Api {
         fn validate(&self) -> Result<(), String> {
             let start = self.start.unwrap_or_default();
             let size = self.size.unwrap_or(2);
-            if size <= start {
-                Err(format!(
+
+            if size > 100 {
+                Err(format!("Search size must be less than 100!"))
+            } else {
+                if size <= start {
+                    Err(format!(
                     "Start {} must be smaller than the size of the query {}",
                     start, size
                 ))
-            } else {
-                Ok(())
+                } else {
+                    Ok(())
+                }
             }
         }
     }
@@ -116,6 +124,8 @@ pub mod Api {
 }
 
 pub mod data {
+    #![allow(non_snake_case)]
+    #![allow(non_camel_case_types)]
     use iref::IriBuf;
     use serde::Serializer;
     /// The link to the dataset enpoint
@@ -229,9 +239,11 @@ pub mod data {
 
 #[cfg(test)]
 mod tests {
+    #![allow(non_snake_case)]
+    #![allow(non_camel_case_types)]
     use std::error::Error;
 
-    use crate::biordf::Omicsdi::Api::SearchBuilder;
+    use crate::biordf::Omicsdi::api::SearchBuilder;
 
     use linked_data::iref::IriBuf;
 
@@ -263,13 +275,21 @@ mod tests {
 
     #[should_panic]
     #[tokio::test]
-    async fn test_pre_search_validation_errors() -> () {
+    async fn test_pre_search_validation_error_size_and_start() -> () {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
         // This is invalid and should not be allowed.
-        let _ = x.query(q).start(19).size(5).build().unwrap();
+        let _ = x.query(q.to_owned()).start(19).size(5).build().unwrap();
     }
 
+    #[should_panic]
+    #[tokio::test]
+    async fn test_pre_search_validation_error_size() -> () {
+        let mut x = SearchBuilder::default();
+        let q: String = "E-GEOD-5003".into();
+        // This is invalid and should not be allowed.
+        let _ = x.query(q.to_owned()).start(19).size(500).build().unwrap();
+    }
     #[test]
     fn test_ld() -> () {
         #[derive(linked_data::Serialize, linked_data::Deserialize)]

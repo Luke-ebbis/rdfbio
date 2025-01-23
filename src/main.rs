@@ -1,5 +1,5 @@
 use clap::Parser;
-use rdfbio::biordf::Omicsdi::Api::SearchBuilder;
+use rdfbio::biordf::Omicsdi::api::SearchBuilder;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
