@@ -1,4 +1,5 @@
-#[allow(non_snake_case)]
+#![allow(non_snake_case)]
+#![allow(non_camel_case_types)]
 pub mod Api {
 
     use crate::biordf::Omicsdi::data::OmicsDiResponse;
@@ -55,10 +56,10 @@ pub mod Api {
             let start = self.start.unwrap_or_default();
             let size = self.size.unwrap_or(2);
             if size <= start {
-                Err(String::from(format!(
+                Err(format!(
                     "Start {} must be smaller than the size of the query {}",
                     start, size
-                )))
+                ))
             } else {
                 Ok(())
             }
@@ -76,7 +77,7 @@ pub mod Api {
             let x = self.query;
             let start = self.start;
             let size = self.size;
-            let mut params = [
+            let params = [
                 ("query", x),
                 ("start", start.to_string()),
                 ("size", size.to_string()),
@@ -107,7 +108,7 @@ pub mod Api {
                     }
                 }
                 Err(e) => {
-                    Err(Box::from("The url could not be made".to_string()))
+                    Err(Box::from(format!("The url could not be made: {e}")))
                 }
             }
         }
@@ -115,11 +116,10 @@ pub mod Api {
 }
 
 pub mod data {
-    use iref::{IriBuf, UriBuf};
+    use iref::IriBuf;
     use serde::Serializer;
     /// The link to the dataset enpoint
     use serde::{Deserialize, Serialize};
-    use std::error::Error;
 
     use serde::de::{self, Deserializer};
     #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -206,7 +206,6 @@ pub mod data {
         s.parse::<u64>().map_err(de::Error::custom)
     }
 
-    use rdf_types::static_iref::iri;
     /// Making a uri
     fn string_to_uri<'de, D>(deserializer: D) -> Result<IriBuf, D::Error>
     where
