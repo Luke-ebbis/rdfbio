@@ -7,12 +7,13 @@ pub mod data {
     use rdf_types::{Id, Quad, Term};
 
     use crate::biordf::omicsdi::data::{DataSet, OmicsDiResponse};
-
-    pub fn dump_quads(quads: Vec<Quad<Id, IriBuf, Term>>) {
+    pub fn dump_quads(quads: Vec<Quad<Id, IriBuf, Term>>) -> String {
+        use rdf_types::RdfDisplay;
+        let mut output = String::new();
         for quad in quads {
-            use rdf_types::RdfDisplay;
-            println!("{} .", quad.rdf_display())
+            output.push_str(&format!("{} .\n", quad.rdf_display()));
         }
+        output
     }
 
     /// Trait to serialise different kinds of datastructures to their RDF representations.
