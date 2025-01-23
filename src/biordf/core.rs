@@ -5,7 +5,7 @@ pub mod data {
     use iref::IriBuf;
     use linked_data::IntoQuadsError;
     use log::warn;
-    use rdf_types::{dataset::Graph, generator::Blank, Id, Quad, Term};
+    use rdf_types::{Id, Quad, Term};
 
     use crate::biordf::omicsdi::data::{DataSet, OmicsDiResponse, Organism};
     pub fn dump_quads(quads: Vec<Quad<Id, IriBuf, Term>>) -> String {
@@ -40,6 +40,7 @@ pub mod data {
 
     impl ToRDF for OmicsDiResponse {
         /// Serialise an omics Di response to quads.
+        /// Ignore the empty taxa slots...
         fn to_quads(
             self
         ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
@@ -50,7 +51,8 @@ pub mod data {
                 match dataset.clone().organisms {
                     Some(data) => {
                         for organism in data {
-                            let mut organism_quads = organism.to_quads()?;
+                            let organism_quads: Vec<Quad<Id, IriBuf, Term>> =
+                                organism.to_quads()?;
                             for mut org_quads in organism_quads {
                                 org_quads.0 =
                                     rdf_types::Id::Iri(focus.clone());
@@ -72,7 +74,7 @@ pub mod data {
     }
 
     impl ToRDF for Organism {
-        /// Serialise a Dataset to quads.
+        /// Serialise an OmicsDi organism to quads.
         fn to_quads(
             self
         ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {

@@ -10,7 +10,7 @@ pub mod api {
         check_for_null_fields, OmicsDiResponse,
     };
     use derive_builder::Builder;
-    use log::{info, warn};
+    use log::info;
     use reqwest::{self, Url};
 
     #[derive(Clone, Debug)]
@@ -137,8 +137,8 @@ pub mod data {
 
     #![allow(non_snake_case)]
     #![allow(non_camel_case_types)]
-    use log::{info, warn};
-    use serde_json::{Map, Value};
+
+    use serde_json::Value;
     use std::collections::HashMap;
 
     use iref::IriBuf;
