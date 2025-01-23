@@ -1,4 +1,4 @@
-/// Using the endpoint, access the datasets.
+//! Using the endpoint, access the datasets.
 
 pub mod access {}
 
@@ -71,15 +71,13 @@ pub mod api {
                     "Search size must be less than {}!",
                     Self::MAX_REQUEST_SIZE
                 ))
-            } else {
-                if size <= start {
-                    Err(format!(
+            } else if size <= start {
+                Err(format!(
                     "Start {} must be smaller than the size of the query {}",
                     start, size
                 ))
-                } else {
-                    Ok(())
-                }
+            } else {
+                Ok(())
             }
         }
     }

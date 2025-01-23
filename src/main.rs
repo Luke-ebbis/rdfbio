@@ -1,6 +1,5 @@
 use clap::ValueEnum;
 use clap::{Parser, Subcommand};
-use env_logger;
 use rdfbio::biordf::{
     core::data::{dump_quads, ToRDF},
     omicsdi::api::SearchBuilder,
