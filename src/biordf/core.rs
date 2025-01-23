@@ -4,9 +4,10 @@ pub mod data {
 
     use iref::IriBuf;
     use linked_data::IntoQuadsError;
-    use rdf_types::{Id, Quad, Term};
+    use log::warn;
+    use rdf_types::{dataset::Graph, generator::Blank, Id, Quad, Term};
 
-    use crate::biordf::omicsdi::data::{DataSet, OmicsDiResponse};
+    use crate::biordf::omicsdi::data::{DataSet, OmicsDiResponse, Organism};
     pub fn dump_quads(quads: Vec<Quad<Id, IriBuf, Term>>) -> String {
         use rdf_types::RdfDisplay;
         let mut output = String::new();
@@ -45,10 +46,40 @@ pub mod data {
             let mut quads: Vec<Quad<Id, IriBuf, Term>> = Vec::new();
             for dataset in self.datasets.unwrap().iter() {
                 let quad_data = dataset.clone().to_quads()?;
+                let focus = dataset.clone().id;
+                match dataset.clone().organisms {
+                    Some(data) => {
+                        for organism in data {
+                            let mut organism_quads = organism.to_quads()?;
+                            for mut org_quads in organism_quads {
+                                org_quads.0 =
+                                    rdf_types::Id::Iri(focus.clone());
+                                quads.push(org_quads.to_owned());
+                            }
+                        }
+                    }
+                    None => {
+                        warn!("focus {focus} has no associated taxa data.")
+                    }
+                }
+                // let organism_quads = dataset.organisms.to_quads()?;
                 for q in quad_data.iter() {
                     quads.push(q.to_owned());
                 }
             }
+            Ok(quads)
+        }
+    }
+
+    impl ToRDF for Organism {
+        /// Serialise a Dataset to quads.
+        fn to_quads(
+            self
+        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+            let quads = linked_data::to_quads(
+                rdf_types::generator::Blank::new(),
+                &self,
+            )?;
             Ok(quads)
         }
     }

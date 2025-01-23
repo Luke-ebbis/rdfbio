@@ -59,7 +59,7 @@ pub mod api {
     }
 
     impl SearchBuilder {
-        const MAX_REQUEST_SIZE: i32 = 10_000;
+        const MAX_REQUEST_SIZE: i32 = 1000;
         /// Check that the size of the query is smaller than the start.
         /// This is to conform to the ENA api requirements.
         fn validate(&self) -> Result<(), String> {
@@ -183,8 +183,13 @@ pub mod data {
         // pub score: Option<u64>,
         // #[ld("ex:description")]
         // pub description: Option<String>,
-        // #[ld(ignore)]
-        // pub organisms: Option<Vec<Organism>>,
+        #[ld(ignore)]
+        // #[ld("ex:organism")]
+        // #[serde(
+        //     deserialize_with = "string_to_uri",
+        //     serialize_with = "uri_to_string"
+        // )]
+        pub organisms: Option<Vec<Organism>>,
         // #[ld(ignore)]
         // pub publicationDate: Option<String>,
         // #[ld(ignore)]
@@ -196,10 +201,21 @@ pub mod data {
         pub extra_fields: HashMap<String, serde_json::Value>,
     }
 
-    #[derive(Deserialize, Serialize, Debug, Clone)]
+    // #[ld(prefix("ex" = "http://example.org/"))]
+    // #[ld(type = "ex:OmicsDiOrganism")]
+    #[derive(
+        linked_data::Serialize,
+        linked_data::Deserialize,
+        Deserialize,
+        Serialize,
+        Debug,
+        Clone,
+    )]
     pub struct Organism {
-        pub acc: Option<String>,
-        pub name: Option<String>,
+        #[ld("ex:taxid")]
+        pub acc: String,
+        #[ld("ex:aka")]
+        pub name: String,
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
