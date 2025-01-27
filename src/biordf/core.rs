@@ -20,20 +20,13 @@ pub mod data {
     /// Trait to serialise different kinds of datastructures to their RDF representations.
     pub trait ToRDF {
         /// Serialise a struct to quads.
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError>;
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError>;
     }
 
     impl ToRDF for DataSet {
         /// Serialise a Dataset to quads.
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
-            let quads = linked_data::to_quads(
-                rdf_types::generator::Blank::new(),
-                &self,
-            )?;
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+            let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &self)?;
             Ok(quads)
         }
     }
@@ -41,9 +34,7 @@ pub mod data {
     impl ToRDF for OmicsDiResponse {
         /// Serialise an omics Di response to quads.
         /// Ignore the empty taxa slots...
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
             let mut quads: Vec<Quad<Id, IriBuf, Term>> = Vec::new();
             for dataset in self.datasets.unwrap().iter() {
                 let quad_data = dataset.clone().to_quads()?;
@@ -54,8 +45,7 @@ pub mod data {
                             let organism_quads: Vec<Quad<Id, IriBuf, Term>> =
                                 organism.to_quads()?;
                             for mut org_quads in organism_quads {
-                                org_quads.0 =
-                                    rdf_types::Id::Iri(focus.clone());
+                                org_quads.0 = rdf_types::Id::Iri(focus.clone());
                                 quads.push(org_quads.to_owned());
                             }
                         }
@@ -75,23 +65,93 @@ pub mod data {
 
     impl ToRDF for Organism {
         /// Serialise an OmicsDi organism to quads.
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
-            let quads = linked_data::to_quads(
-                rdf_types::generator::Blank::new(),
-                &self,
-            )?;
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+            let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &self)?;
             Ok(quads)
         }
     }
 }
 
 pub mod searching {
+    use crate::biordf::omicsdi::api::Search;
 
     /// For API methods that have a known size, and collect up to a max of the total size
-    trait Pageable {
-        fn max();
+    pub trait Pageable {
+        /// Get the total request size for this endpoint
+        fn max_size(&self) -> i64;
+
+        /// Get the total amount of hits for a search.
+        fn total_hits(&self) -> i64;
+    }
+
+    // impl Ord for Search {
+    //     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    //         self.start() >=
+    //     }
+    // }
+    impl Pageable for Search {
+        fn max_size(&self) -> i64 {
+            Self::MAX_REQUEST_SIZE as i64
+        }
+
+        fn total_hits(&self) -> i64 {
+            todo!()
+        }
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use crate::biordf::{core::searching::Pageable, omicsdi::api::SearchBuilder};
+
+    #[tokio::test]
+    async fn test_basic_traits() -> Result<(), Box<dyn Error>> {
+        let mut x = SearchBuilder::default();
+        let q: String = "E-GEOD-5003".into();
+        let query_1 = x.query(q.clone()).build()?;
+        let query_2 = x.query(q.clone()).start(2).size(20).build()?;
+
+        assert!(query_1 < query_2, "Check if the default is oke");
+        assert!(query_1.max_size() == 1_000, "The max should be oke");
+
+        let query_1 = x.query(q.clone()).start(2).size(20).build()?;
+        let query_2 = x.query(q).start(2).size(20).build()?;
+        assert!(query_1 == query_2, "equal queries");
+
+        let query_1 = x.query("".into()).start(2).size(200).build()?;
+        let query_2 = x.query("".into()).start(2).size(20).build()?;
+        assert!(query_1 != query_2, "equal queries");
+
+        let query_1 = x.query("".into()).start(2).size(20).build()?;
+        let query_2 = x
+            .query("".into())
+            .start(2)
+            .size(20)
+            .facet_size(10)
+            .build()?;
+        assert!(query_1 != query_2, "equal queries");
+
+        let query_1 = x.query("".into()).start(2).size(20).build()?;
+        let query_2 = x.query("".into()).start(3).size(20).build()?;
+        assert!(query_1 != query_2);
+        assert!(query_1 < query_2);
+
+        let query_1 = x.query("".into()).start(2).size(200).build()?;
+        let query_2 = x.query("".into()).start(3).size(20).build()?;
+        assert!(query_1 != query_2);
+        assert!(query_1 < query_2);
+
+        let query_1 = x.query("".into()).start(1000).size(20).build()?;
+        let query_2 = x.query("".into()).start(3).size(20).build()?;
+        assert!(query_1 != query_2);
+        assert!(query_1 > query_2);
+
+        let query_1 = x.query("".into()).start(1000).size(200).build()?;
+        let query_2 = x.query("".into()).start(3).size(20).build()?;
+        assert!(query_1 != query_2);
+        assert!(query_1 > query_2);
+        Ok(())
+    }
+}

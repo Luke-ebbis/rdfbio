@@ -6,9 +6,7 @@ pub mod api {
 
     #![allow(non_snake_case)]
     #![allow(non_camel_case_types)]
-    use crate::biordf::omicsdi::data::{
-        check_for_null_fields, OmicsDiResponse,
-    };
+    use crate::biordf::omicsdi::data::{check_for_null_fields, OmicsDiResponse};
     use derive_builder::Builder;
     use log::info;
     use reqwest::{self, Url};
@@ -41,7 +39,7 @@ pub mod api {
     /// Search the OmicsDI rest database endpoint
     ///
     /// Documentation for the parameters is copied from there.
-    #[derive(Builder, Default, Debug, PartialEq)]
+    #[derive(Builder, Default, Debug, PartialEq, Eq, Ord, PartialOrd)]
     #[builder(build_fn(validate = "Self::validate"))]
     pub struct Search {
         // domain: Domain,
@@ -50,45 +48,48 @@ pub mod api {
         // /// Field to sort the output of the search results, e.g: id, publication_date
         #[builder(setter(into), default = "0")]
         // sort: Option<Field>,
-        /// The start of the query. Needs to be smaller than the return.
-        start: i32,
-        /// Size of the return, needs to be below 100.
+        /// The start of the query. Increment this to page.
+        pub start: i32,
+        /// Size of the return, needs to be below 1000.
         #[builder(setter(into), default = "2")]
         size: i32,
-        // order: Option<Order>,
+        /// face count. The summary of the dataset that is returned.
+        #[builder(setter(into), default = "0")]
+        facet_size: i32, // order: Option<Order>,
     }
 
     impl SearchBuilder {
         const MAX_REQUEST_SIZE: i32 = 1000;
-        /// Check that the size of the query is smaller than the start.
-        /// This is to conform to the ENA api requirements.
-        fn validate(&self) -> Result<(), String> {
-            let start = self.start.unwrap_or_default();
-            let size = self.size.unwrap_or(2);
 
+        fn validate_size(size: i32) -> Result<(), String> {
             if size > Self::MAX_REQUEST_SIZE {
                 Err(format!(
-                    "Search size must be less than {}!",
-                    Self::MAX_REQUEST_SIZE
-                ))
-            } else if size <= start {
-                Err(format!(
-                    "Start {} must be smaller than the size of the query {}",
-                    start, size
+                    "Search size must be less than {}, size was {}!",
+                    Self::MAX_REQUEST_SIZE,
+                    size
                 ))
             } else {
                 Ok(())
             }
         }
+
+        /// Check that the size of the query is smaller than the start.
+        /// This is to conform to the ENA api requirements.
+        fn validate(&self) -> Result<(), String> {
+            let start = self.start.unwrap_or_default();
+            let size = self.size.unwrap_or(2);
+            let search_size = size;
+            Self::validate_size(search_size)?;
+            Ok(())
+        }
     }
 
     impl Search {
         const REST_URL: &str = "https://www.omicsdi.org/ws/dataset/search";
+        pub const MAX_REQUEST_SIZE: i32 = SearchBuilder::MAX_REQUEST_SIZE;
         /// Search the OmicsDi database with a search string.
         ///
-        pub async fn search(
-            self
-        ) -> Result<OmicsDiResponse, Box<dyn std::error::Error>> {
+        pub async fn search(self) -> Result<OmicsDiResponse, Box<dyn std::error::Error>> {
             let accept_header = "application/json";
             let x = self.query;
             let start = self.start;
@@ -113,8 +114,7 @@ pub mod api {
                         let json_text: String = response.text().await?;
                         let _ = check_for_null_fields(&json_text);
 
-                        let deserialized: OmicsDiResponse =
-                            serde_json::from_str(&json_text)?;
+                        let deserialized: OmicsDiResponse = serde_json::from_str(&json_text)?;
                         Ok(deserialized)
                     } else {
                         Err(Box::from(format!(
@@ -123,9 +123,7 @@ pub mod api {
                         )))
                     }
                 }
-                Err(e) => {
-                    Err(Box::from(format!("The url could not be made: {e}")))
-                }
+                Err(e) => Err(Box::from(format!("The url could not be made: {e}"))),
             }
         }
     }
@@ -164,10 +162,7 @@ pub mod data {
     #[ld(type = "ex:OmicDiDataSet")]
     pub struct DataSet {
         #[ld(id)]
-        #[serde(
-            deserialize_with = "string_to_uri",
-            serialize_with = "uri_to_string"
-        )]
+        #[serde(deserialize_with = "string_to_uri", serialize_with = "uri_to_string")]
         pub id: IriBuf,
         #[ld("ex:source")]
         #[serde(deserialize_with = "null_check")]
@@ -202,12 +197,7 @@ pub mod data {
     // #[ld(prefix("ex" = "http://example.org/"))]
     // #[ld(type = "ex:OmicsDiOrganism")]
     #[derive(
-        linked_data::Serialize,
-        linked_data::Deserialize,
-        Deserialize,
-        Serialize,
-        Debug,
-        Clone,
+        linked_data::Serialize, linked_data::Deserialize, Deserialize, Serialize, Debug, Clone,
     )]
     pub struct Organism {
         #[ld("ex:taxid")]
@@ -228,10 +218,7 @@ pub mod data {
     pub struct FacetValue {
         pub label: String,
         pub value: String,
-        #[serde(
-            deserialize_with = "string_to_u64",
-            serialize_with = "u64_to_string"
-        )]
+        #[serde(deserialize_with = "string_to_u64", serialize_with = "u64_to_string")]
         pub count: u64,
     }
 
@@ -247,10 +234,7 @@ pub mod data {
     }
 
     /// Custom serializer for converting a u64 to a string
-    fn u64_to_string<S>(
-        value: &u64,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+    fn u64_to_string<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -277,10 +261,7 @@ pub mod data {
         IriBuf::new(st).map_err(de::Error::custom)
     }
     /// Making a string
-    fn uri_to_string<S>(
-        value: &IriBuf,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+    fn uri_to_string<S>(value: &IriBuf, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -288,16 +269,12 @@ pub mod data {
     }
 
     pub fn check_for_null_fields(json: &str) -> Result<(), String> {
-        let value: Value =
-            serde_json::from_str(json).map_err(|e| e.to_string())?;
+        let value: Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
         check_for_null_fields_recursive(&value, "");
         Ok(())
     }
 
-    fn check_for_null_fields_recursive(
-        value: &Value,
-        parent_key: &str,
-    ) {
+    fn check_for_null_fields_recursive(value: &Value, parent_key: &str) {
         match value {
             Value::Null => {
                 log::warn!("Field '{}' is null", parent_key);
@@ -319,11 +296,7 @@ pub mod data {
                 }
             }
             _ => {
-                log::info!(
-                    "Field '{}' has a valid value: {:?}",
-                    parent_key,
-                    value
-                );
+                log::info!("Field '{}' has a valid value: {:?}", parent_key, value);
             }
         }
     }
@@ -348,9 +321,10 @@ mod tests {
         let q: String = "E-GEOD-5003".into();
         let query = x.query(q).build()?;
         let results = query.search().await?;
-        let first_identifier =
-            results.clone().datasets.unwrap().pop().unwrap().id;
+        let first_identifier = results.clone().datasets.unwrap().pop().unwrap().id;
         assert_eq!(first_identifier, "http://example.org/E-GEOD-5003");
+
+        let _ = x.query("fish".into()).facet_size(1000).build()?;
         Ok(())
     }
 
@@ -360,7 +334,7 @@ mod tests {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
         // This is invalid and should not be allowed.
-        let _ = x.query(q.to_owned()).start(19).size(5).build().unwrap();
+        let _ = x.query(q.to_owned()).start(19).size(10005).build().unwrap();
     }
 
     #[should_panic]
