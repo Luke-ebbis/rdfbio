@@ -86,3 +86,12 @@ pub mod data {
         }
     }
 }
+
+pub mod searching {
+
+    /// For API methods that have a known size, and collect up to a max of the total size
+    trait Pageable {
+        fn max();
+    }
+}
+
