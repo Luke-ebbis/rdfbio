@@ -467,4 +467,19 @@ mod tests {
             Ok(_) => Err(Box::from("this request should have failed")),
         }
     }
+    #[tokio::test]
+    async fn test_request_errors_2() -> Result<(), Box<dyn Error>> {
+        let mut x = SearchBuilder::default();
+        let q: String = "E-GEOD-5003".into();
+        // This is invalid and should not be allowed.
+        let r = x.query(q.to_owned()).build().unwrap();
+        let out = r.search().await;
+        match out {
+            Err(_) => Err(Box::from("Wrong error value")),
+            Ok(r) => {
+                assert!(r.count == 1);
+                Ok(())
+            }
+        }
+    }
 }
