@@ -1,3 +1,5 @@
+use core::panic;
+
 use clap::ValueEnum;
 use clap::{Parser, Subcommand};
 use rdfbio::biordf::{
@@ -60,18 +62,23 @@ async fn main() {
         } => {
             let mut binding = SearchBuilder::default();
             let size: i32 = size.try_into().expect("Size too large for i32");
-            let start: i32 =
-                start.try_into().expect("Start value too large for i32");
+            let start: i32 = start.try_into().expect("Start value too large for i32");
             let builder = binding.size(size).start(start);
             let query = builder.query(query).build().unwrap();
-            let results = query.search().await.unwrap();
+            let results = query.search().await;
+
+            let results = match results {
+                Ok(r) => r,
+                Err(e) => {
+                    panic!("{e}")
+                }
+            };
 
             match format {
                 OutputFormat::Ttl => {
                     let quads = results.to_quads().unwrap();
                     if let Some(file) = output {
-                        std::fs::write(file, dump_quads(quads.to_owned()))
-                            .unwrap();
+                        std::fs::write(file, dump_quads(quads.to_owned())).unwrap();
                     } else {
                         println!("{}", dump_quads(quads.to_owned()));
                     }

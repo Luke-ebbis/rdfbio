@@ -56,8 +56,9 @@ pub mod api {
 
         /// Extract start and total hits from the error message
         fn extract_start_error(message: &str) -> Option<(i32, i32)> {
-            let re = regex::Regex::new(r"The start parameter \((\d+)\) is bigger than or equal to the number of hits \((\d+)\).").ok()?;
-            let caps = re.captures(message)?;
+            let message = message.replace(",", ""); // Removes commas from numbers
+            let re = regex::Regex::new(r"The start parameter \((\d+)\) is bigger than or equal to the number of hits \((\d+)\)\.").ok()?;
+            let caps = re.captures(&message)?;
             let start = caps.get(1)?.as_str().parse().ok()?;
             let hits = caps.get(2)?.as_str().parse().ok()?;
             Some((start, hits))
@@ -68,7 +69,7 @@ pub mod api {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
                 SearchError::InvalidStartValue(start, hits) => {
-                    write!(f, "Invalid 'start' value {}. It must be less than the total number of hits ({})", start, hits)
+                    write!(f, "Invalid 'start' value {}. It must be less than the total number of hits ({}). Rerun with start of <={}. ", start, hits, hits-1)
                 }
                 SearchError::RequestFailed(status, message) => {
                     write!(f, "Request failed with status code {}: {}", status, message)
