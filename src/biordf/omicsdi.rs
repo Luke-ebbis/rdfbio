@@ -9,8 +9,8 @@ pub mod api {
     use crate::biordf::omicsdi::data::OmicsDiResponse;
     use core::fmt;
     use derive_builder::Builder;
-    use log::info;
-    use reqwest::{self, Url};
+
+    use reqwest::{self};
     // use serde::ser::StdError;
     use std::error::Error;
 
@@ -184,7 +184,7 @@ pub mod api {
             params: Vec<(&str, String)>,
             header: &str,
         ) -> Result<OmicsDiResponse, SearchError> {
-            let url = "https://www.omicsdi.org/ws/dataset/search";
+            let url = Self::REST_URL;
             let url = reqwest::Url::parse_with_params(url, params)
                 .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
             let client = reqwest::Client::new();
@@ -225,7 +225,7 @@ pub mod api {
                 ("start", start.to_string()),
                 ("size", size.to_string()),
             ];
-            let out = Self::request(params, &accept_header).await?;
+            let out = Self::request(params, accept_header).await?;
             Ok(out)
         }
     }
@@ -398,7 +398,7 @@ pub mod data {
                 }
             }
             _ => {
-                ()
+
                 // log::info!("Field '{}' has a valid value: {:?}", parent_key, value);
             }
         }
