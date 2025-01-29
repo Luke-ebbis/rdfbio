@@ -6,10 +6,103 @@ pub mod api {
 
     #![allow(non_snake_case)]
     #![allow(non_camel_case_types)]
-    use crate::biordf::omicsdi::data::{check_for_null_fields, OmicsDiResponse};
+    use crate::biordf::omicsdi::data::OmicsDiResponse;
+    use core::fmt;
     use derive_builder::Builder;
     use log::info;
     use reqwest::{self, Url};
+    // use serde::ser::StdError;
+    use std::error::Error;
+
+    #[derive(Debug)]
+    pub enum SearchError {
+        InvalidStartValue(i32, i32),                // the URL that failed
+        Other(String),                              // (start, total hits)
+        JsonParseFailed(serde_json::Error),         // Store the serde error here
+        RequestFailed(reqwest::StatusCode, String), // (status code, error message)
+        UrlParseFailed(String),                     // Generic catch-all error
+    }
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+    impl SearchError {
+        /// Parse an XML error response and map it to `SearchError`
+        fn from_xml(xml: &str) -> Self {
+            let mut reader = Reader::from_str(xml);
+            // reader.trim_text(true);
+
+            let mut message = String::new();
+
+            loop {
+                match reader.read_event() {
+                    Ok(Event::Eof) => break, // End of file
+                    Ok(Event::Text(e)) => {
+                        let text = e.unescape().unwrap_or_default();
+                        if message.is_empty() {
+                            message = text.to_string();
+                        }
+                    }
+                    Err(_) => return SearchError::Other("Failed to parse XML response".into()),
+                    _ => {}
+                }
+            }
+
+            // Check if the error message contains "The start parameter (100) is bigger than or equal to the number of hits (94)."
+            if let Some((start, hits)) = Self::extract_start_error(&message) {
+                return SearchError::InvalidStartValue(start, hits);
+            }
+
+            SearchError::Other(message)
+        }
+
+        /// Extract start and total hits from the error message
+        fn extract_start_error(message: &str) -> Option<(i32, i32)> {
+            let re = regex::Regex::new(r"The start parameter \((\d+)\) is bigger than or equal to the number of hits \((\d+)\).").ok()?;
+            let caps = re.captures(message)?;
+            let start = caps.get(1)?.as_str().parse().ok()?;
+            let hits = caps.get(2)?.as_str().parse().ok()?;
+            Some((start, hits))
+        }
+    }
+
+    impl fmt::Display for SearchError {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            match self {
+                SearchError::InvalidStartValue(start, hits) => {
+                    write!(f, "Invalid 'start' value {}. It must be less than the total number of hits ({})", start, hits)
+                }
+                SearchError::RequestFailed(status, message) => {
+                    write!(f, "Request failed with status code {}: {}", status, message)
+                }
+                SearchError::UrlParseFailed(url) => {
+                    write!(f, "Failed to parse URL: {}", url)
+                }
+                SearchError::JsonParseFailed(err) => {
+                    write!(f, "Failed to parse JSON response: {}", err)
+                }
+                SearchError::Other(msg) => {
+                    write!(f, "An unknown error occurred: {}", msg)
+                }
+            }
+        }
+    }
+    // impl StdError for SearchError {}
+    impl Error for SearchError {}
+
+    impl From<reqwest::Error> for SearchError {
+        fn from(err: reqwest::Error) -> Self {
+            // If the reqwest error is related to status codes, you can extract them
+            let status = err
+                .status()
+                .unwrap_or(reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+            SearchError::RequestFailed(status, err.to_string())
+        }
+    }
+
+    impl From<serde_json::Error> for SearchError {
+        fn from(err: serde_json::Error) -> Self {
+            SearchError::JsonParseFailed(err)
+        }
+    }
 
     #[derive(Clone, Debug)]
     pub enum Domain {
@@ -76,7 +169,6 @@ pub mod api {
         /// Check that the size of the query is smaller than the start.
         /// This is to conform to the ENA api requirements.
         fn validate(&self) -> Result<(), String> {
-            let start = self.start.unwrap_or_default();
             let size = self.size.unwrap_or(2);
             let search_size = size;
             Self::validate_size(search_size)?;
@@ -87,44 +179,54 @@ pub mod api {
     impl Search {
         const REST_URL: &str = "https://www.omicsdi.org/ws/dataset/search";
         pub const MAX_REQUEST_SIZE: i32 = SearchBuilder::MAX_REQUEST_SIZE;
+
+        async fn request(
+            params: Vec<(&str, String)>,
+            header: &str,
+        ) -> Result<OmicsDiResponse, SearchError> {
+            let url = "https://www.omicsdi.org/ws/dataset/search";
+            let url = reqwest::Url::parse_with_params(url, params)
+                .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
+            let client = reqwest::Client::new();
+            let response = client
+                .get(url)
+                .header("accept", header)
+                .send()
+                .await
+                .map_err(|_| {
+                    SearchError::RequestFailed(
+                        reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to send request".into(),
+                    )
+                })?;
+
+            let status = response.status();
+            let text = response.text().await?;
+
+            if status.is_success() {
+                let json_text: String = text;
+                let _ = super::data::check_for_null_fields(&json_text);
+                let deserialized: OmicsDiResponse = serde_json::from_str(&json_text)?;
+                return Ok(deserialized);
+            }
+
+            // If an error occurs, parse the XML response
+            Err(SearchError::from_xml(&text))
+        }
         /// Search the OmicsDi database with a search string.
         ///
-        pub async fn search(self) -> Result<OmicsDiResponse, Box<dyn std::error::Error>> {
+        pub async fn search(self) -> Result<OmicsDiResponse, SearchError> {
             let accept_header = "application/json";
             let x = self.query;
             let start = self.start;
             let size = self.size;
-            let params = [
+            let params = vec![
                 ("query", x),
                 ("start", start.to_string()),
                 ("size", size.to_string()),
             ];
-            let url = Url::parse_with_params(Self::REST_URL, params);
-            match url {
-                Ok(url) => {
-                    let url = url.to_string().replace("+", "%20");
-                    info!("Checking {url}");
-                    let client = reqwest::Client::new();
-                    let response = client
-                        .get(url)
-                        .header("accept", accept_header)
-                        .send()
-                        .await?;
-                    if response.status().is_success() {
-                        let json_text: String = response.text().await?;
-                        let _ = check_for_null_fields(&json_text);
-
-                        let deserialized: OmicsDiResponse = serde_json::from_str(&json_text)?;
-                        Ok(deserialized)
-                    } else {
-                        Err(Box::from(format!(
-                            "Failed to fetch data: {}",
-                            response.status()
-                        )))
-                    }
-                }
-                Err(e) => Err(Box::from(format!("The url could not be made: {e}"))),
-            }
+            let out = Self::request(params, &accept_header).await?;
+            Ok(out)
         }
     }
 }
@@ -296,7 +398,8 @@ pub mod data {
                 }
             }
             _ => {
-                log::info!("Field '{}' has a valid value: {:?}", parent_key, value);
+                ()
+                // log::info!("Field '{}' has a valid value: {:?}", parent_key, value);
             }
         }
     }
@@ -308,11 +411,7 @@ mod tests {
     #![allow(non_camel_case_types)]
     use std::error::Error;
 
-    use crate::biordf::omicsdi::api::SearchBuilder;
-
-    use linked_data::iref::IriBuf;
-
-    use rdf_types::static_iref::iri;
+    use crate::biordf::omicsdi::api::{SearchBuilder, SearchError};
 
     /// Database connection check...
     #[tokio::test]
@@ -350,48 +449,22 @@ mod tests {
             .build()
             .unwrap();
     }
-    #[test]
-    fn test_ld() -> () {
-        #[derive(linked_data::Serialize, linked_data::Deserialize)]
-        #[ld(prefix("ex" = "http://example.org/"))]
-        struct Foo {
-            #[ld(id)]
-            id: IriBuf,
 
-            #[ld("ex:name")]
-            name: String,
-
-            #[ld("ex:email")]
-            email: String,
-
-            #[ld("ex:numbers")]
-            numbers: Vec<i64>,
-            #[ld("ex:maybe")]
-            maybe: Option<String>,
-            #[ld("ex:alot")]
-            alot: Vec<Nested>,
+    #[tokio::test]
+    async fn test_request_errors() -> Result<(), Box<dyn Error>> {
+        let mut x = SearchBuilder::default();
+        let q: String = "E-GEOD-5003".into();
+        // This is invalid and should not be allowed.
+        let r = x.query(q.to_owned()).start(19).build().unwrap();
+        let out = r.search().await;
+        match out {
+            Err(SearchError::InvalidStartValue(start, total)) => {
+                assert!(start == 19);
+                assert!(total == 1);
+                Ok(())
+            }
+            Err(_) => Err(Box::from("Wrong error value")),
+            Ok(_) => Err(Box::from("this request should have failed")),
         }
-
-        #[derive(linked_data::Serialize, linked_data::Deserialize)]
-        #[ld(prefix("ex" = "http://example.org/"))]
-        #[ld(type = "ex:object")]
-        struct Nested {
-            #[ld("ex:num")]
-            m: i64,
-        }
-
-        let _value = Foo {
-            id: iri!("http://example.org/JohnSmith").to_owned(),
-            name: "John Smith".to_owned(),
-            email: "john.smith@example.org".to_owned(),
-            numbers: vec![1, 133],
-            maybe: Some("S".into()),
-            alot: vec![Nested { m: 10 }],
-        };
-
-        // for quad in quads {
-        //     use rdf_types::RdfDisplay;
-        //     println!("{} .", quad.rdf_display())
-        // }
     }
 }

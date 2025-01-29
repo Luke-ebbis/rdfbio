@@ -104,6 +104,8 @@ pub mod searching {
 mod tests {
     use std::error::Error;
 
+    use iref::IriBuf;
+
     use crate::biordf::{core::searching::Pageable, omicsdi::api::SearchBuilder};
 
     #[tokio::test]
@@ -153,5 +155,51 @@ mod tests {
         assert!(query_1 != query_2);
         assert!(query_1 > query_2);
         Ok(())
+    }
+
+    use rdf_types::static_iref::iri;
+    #[test]
+    fn test_ld() -> () {
+        #[derive(linked_data::Serialize, linked_data::Deserialize)]
+        #[ld(prefix("ex" = "http://example.org/"))]
+        struct Foo {
+            #[ld(id)]
+            id: IriBuf,
+
+            #[ld("ex:name")]
+            name: String,
+
+            #[ld("ex:email")]
+            email: String,
+
+            #[ld("ex:numbers")]
+            numbers: Vec<i64>,
+            #[ld("ex:maybe")]
+            maybe: Option<String>,
+            #[ld("ex:alot")]
+            alot: Vec<Nested>,
+        }
+
+        #[derive(linked_data::Serialize, linked_data::Deserialize)]
+        #[ld(prefix("ex" = "http://example.org/"))]
+        #[ld(type = "ex:object")]
+        struct Nested {
+            #[ld("ex:num")]
+            m: i64,
+        }
+
+        let _value = Foo {
+            id: iri!("http://example.org/JohnSmith").to_owned(),
+            name: "John Smith".to_owned(),
+            email: "john.smith@example.org".to_owned(),
+            numbers: vec![1, 133],
+            maybe: Some("S".into()),
+            alot: vec![Nested { m: 10 }],
+        };
+
+        // for quad in quads {
+        //     use rdf_types::RdfDisplay;
+        //     println!("{} .", quad.rdf_display())
+        // }
     }
 }
