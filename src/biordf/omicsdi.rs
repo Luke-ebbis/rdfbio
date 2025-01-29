@@ -1,6 +1,12 @@
 //! Using the endpoint, access the datasets.
 
-pub mod access {}
+pub mod access {
+
+    pub enum Endpoints {
+        /// The OmicsDI endpoint
+        OmicsDI,
+    }
+}
 
 pub mod api {
 
@@ -133,7 +139,7 @@ pub mod api {
     /// Search the OmicsDI rest database endpoint
     ///
     /// Documentation for the parameters is copied from there.
-    #[derive(Builder, Default, Debug, PartialEq, Eq, Ord, PartialOrd)]
+    #[derive(Builder, Default, Debug, PartialEq, Eq, Ord, PartialOrd, Clone)]
     #[builder(build_fn(validate = "Self::validate"))]
     pub struct Search {
         // domain: Domain,
@@ -180,6 +186,17 @@ pub mod api {
     impl Search {
         const REST_URL: &str = "https://www.omicsdi.org/ws/dataset/search";
         pub const MAX_REQUEST_SIZE: i32 = SearchBuilder::MAX_REQUEST_SIZE;
+
+        pub async fn total_hit(&self) -> Result<i32, SearchError> {
+            let mut search = self.clone();
+            search.size = 1;
+            let hits = search.search().await;
+            match hits {
+                Err(SearchError::InvalidStartValue(_, end)) => Ok(end),
+                Ok(r) => Ok(r.count as i32),
+                Err(e) => Err(e),
+            }
+        }
 
         async fn request(
             params: Vec<(&str, String)>,

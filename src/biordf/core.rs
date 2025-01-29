@@ -20,20 +20,13 @@ pub mod data {
     /// Trait to serialise different kinds of datastructures to their RDF representations.
     pub trait ToRDF {
         /// Serialise a struct to quads.
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError>;
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError>;
     }
 
     impl ToRDF for DataSet {
         /// Serialise a Dataset to quads.
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
-            let quads = linked_data::to_quads(
-                rdf_types::generator::Blank::new(),
-                &self,
-            )?;
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+            let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &self)?;
             Ok(quads)
         }
     }
@@ -41,9 +34,7 @@ pub mod data {
     impl ToRDF for OmicsDiResponse {
         /// Serialise an omics Di response to quads.
         /// Ignore the empty taxa slots...
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
             let mut quads: Vec<Quad<Id, IriBuf, Term>> = Vec::new();
             for dataset in self.datasets.unwrap().iter() {
                 let quad_data = dataset.clone().to_quads()?;
@@ -54,13 +45,9 @@ pub mod data {
                             let organism_quads: Vec<Quad<Id, IriBuf, Term>> =
                                 organism.to_quads()?;
                             for mut org_quads in organism_quads {
-                                org_quads.0 =
-                                    rdf_types::Id::Iri(focus.clone());
+                                org_quads.0 = rdf_types::Id::Iri(focus.clone());
                                 match org_quads.2.clone() {
-                                    rdf_types::Term::Literal(Literal {
-                                        value: l,
-                                        type_,
-                                    }) => {
+                                    rdf_types::Term::Literal(Literal { value: l, type_ }) => {
                                         if l != "" {
                                             quads.push(org_quads.to_owned());
                                         }
@@ -85,42 +72,32 @@ pub mod data {
 
     impl ToRDF for Organism {
         /// Serialise an OmicsDi organism to quads.
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
-            let quads = linked_data::to_quads(
-                rdf_types::generator::Blank::new(),
-                &self,
-            )?;
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+            let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &self)?;
             Ok(quads)
         }
     }
 }
 
 pub mod searching {
-    use crate::biordf::omicsdi::api::Search;
+    use crate::biordf::omicsdi::api::{Search, SearchError};
 
     /// For API methods that have a known size, and collect up to a max of the total size
     pub trait Pageable {
         /// Get the total request size for this endpoint
-        fn max_size(&self) -> i64;
+        fn max_size(&self) -> i32;
 
         /// Get the total amount of hits for a search.
-        fn total_hits(&self) -> i64;
+        fn total_hits(&self) -> impl std::future::Future<Output = Result<i32, SearchError>> + Send;
     }
 
-    // impl Ord for Search {
-    //     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-    //         self.start() >=
-    //     }
-    // }
     impl Pageable for Search {
-        fn max_size(&self) -> i64 {
-            Self::MAX_REQUEST_SIZE as i64
+        fn max_size(&self) -> i32 {
+            Self::MAX_REQUEST_SIZE
         }
 
-        fn total_hits(&self) -> i64 {
-            todo!()
+        async fn total_hits(&self) -> Result<i32, SearchError> {
+            self.total_hit().await
         }
     }
 }
@@ -131,9 +108,19 @@ mod tests {
 
     use iref::IriBuf;
 
-    use crate::biordf::{
-        core::searching::Pageable, omicsdi::api::SearchBuilder,
-    };
+    use crate::biordf::{core::searching::Pageable, omicsdi::api::SearchBuilder};
+
+    #[tokio::test]
+    async fn test_paging() -> Result<(), Box<dyn Error>> {
+        let mut x = SearchBuilder::default();
+        let q: String = "E-GEOD-5003".into();
+        // This is invalid and should not be allowed.
+        let r = x.query(q.to_owned()).build().unwrap();
+        let out = r.total_hits().await?;
+        assert_eq!(out, 1);
+
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_basic_traits() -> Result<(), Box<dyn Error>> {
