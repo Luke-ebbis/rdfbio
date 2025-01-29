@@ -5,7 +5,7 @@ pub mod data {
     use iref::IriBuf;
     use linked_data::IntoQuadsError;
     use log::warn;
-    use rdf_types::{Id, Quad, Term};
+    use rdf_types::{Id, Literal, Quad, Term};
 
     use crate::biordf::omicsdi::data::{DataSet, OmicsDiResponse, Organism};
     pub fn dump_quads(quads: Vec<Quad<Id, IriBuf, Term>>) -> String {
@@ -20,13 +20,20 @@ pub mod data {
     /// Trait to serialise different kinds of datastructures to their RDF representations.
     pub trait ToRDF {
         /// Serialise a struct to quads.
-        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError>;
+        fn to_quads(
+            self
+        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError>;
     }
 
     impl ToRDF for DataSet {
         /// Serialise a Dataset to quads.
-        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
-            let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &self)?;
+        fn to_quads(
+            self
+        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+            let quads = linked_data::to_quads(
+                rdf_types::generator::Blank::new(),
+                &self,
+            )?;
             Ok(quads)
         }
     }
@@ -34,7 +41,9 @@ pub mod data {
     impl ToRDF for OmicsDiResponse {
         /// Serialise an omics Di response to quads.
         /// Ignore the empty taxa slots...
-        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+        fn to_quads(
+            self
+        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
             let mut quads: Vec<Quad<Id, IriBuf, Term>> = Vec::new();
             for dataset in self.datasets.unwrap().iter() {
                 let quad_data = dataset.clone().to_quads()?;
@@ -45,8 +54,19 @@ pub mod data {
                             let organism_quads: Vec<Quad<Id, IriBuf, Term>> =
                                 organism.to_quads()?;
                             for mut org_quads in organism_quads {
-                                org_quads.0 = rdf_types::Id::Iri(focus.clone());
-                                quads.push(org_quads.to_owned());
+                                org_quads.0 =
+                                    rdf_types::Id::Iri(focus.clone());
+                                match org_quads.2.clone() {
+                                    rdf_types::Term::Literal(Literal {
+                                        value: l,
+                                        type_,
+                                    }) => {
+                                        if l != "" {
+                                            quads.push(org_quads.to_owned());
+                                        }
+                                    }
+                                    rdf_types::Term::Id(_) => todo!(),
+                                }
                             }
                         }
                     }
@@ -65,8 +85,13 @@ pub mod data {
 
     impl ToRDF for Organism {
         /// Serialise an OmicsDi organism to quads.
-        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
-            let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &self)?;
+        fn to_quads(
+            self
+        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+            let quads = linked_data::to_quads(
+                rdf_types::generator::Blank::new(),
+                &self,
+            )?;
             Ok(quads)
         }
     }
@@ -106,7 +131,9 @@ mod tests {
 
     use iref::IriBuf;
 
-    use crate::biordf::{core::searching::Pageable, omicsdi::api::SearchBuilder};
+    use crate::biordf::{
+        core::searching::Pageable, omicsdi::api::SearchBuilder,
+    };
 
     #[tokio::test]
     async fn test_basic_traits() -> Result<(), Box<dyn Error>> {
