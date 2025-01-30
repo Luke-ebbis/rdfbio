@@ -139,12 +139,12 @@ pub mod api {
     /// Search the OmicsDI rest database endpoint
     ///
     /// Documentation for the parameters is copied from there.
-    #[derive(Builder, Default, Debug, PartialEq, Eq, Ord, PartialOrd, Clone)]
+    #[derive(Builder, Default, Debug, PartialEq, Eq, Ord, PartialOrd, Copy, Clone)]
     #[builder(build_fn(validate = "Self::validate"))]
-    pub struct Search {
+    pub struct Search<'a> {
         // domain: Domain,
         /// General search term against multiple fields including, e.g: cancer human
-        query: String,
+        query: &'a str,
         // /// Field to sort the output of the search results, e.g: id, publication_date
         #[builder(setter(into), default = "0")]
         // sort: Option<Field>,
@@ -158,7 +158,7 @@ pub mod api {
         facet_size: i32, // order: Option<Order>,
     }
 
-    impl SearchBuilder {
+    impl SearchBuilder<'_> {
         const MAX_REQUEST_SIZE: i32 = 1000;
 
         fn validate_size(size: i32) -> Result<(), String> {
@@ -183,8 +183,8 @@ pub mod api {
         }
     }
 
-    impl Search {
-        const REST_URL: &str = "https://www.omicsdi.org/ws/dataset/search";
+    impl Search<'_> {
+        const REST_URL: &'static str = "https://www.omicsdi.org/ws/dataset/search";
         pub const MAX_REQUEST_SIZE: i32 = SearchBuilder::MAX_REQUEST_SIZE;
 
         pub fn total_hit(&self) -> Result<i32, SearchError> {
@@ -199,7 +199,7 @@ pub mod api {
         }
 
         fn request(
-            params: Vec<(&str, String)>,
+            params: Vec<(&str, &str)>,
             header: &str,
         ) -> Result<OmicsDiResponse, SearchError> {
             let url = Self::REST_URL;
@@ -237,11 +237,9 @@ pub mod api {
             let x = self.query;
             let start = self.start;
             let size = self.size;
-            let params = vec![
-                ("query", x),
-                ("start", start.to_string()),
-                ("size", size.to_string()),
-            ];
+            let start = start.to_string();
+            let size = size.to_string();
+            let params = vec![("query", x), ("start", &start), ("size", &size)];
             let out = Self::request(params, accept_header)?;
             Ok(out)
         }
@@ -435,7 +433,7 @@ mod tests {
     fn test_input() -> Result<(), Box<dyn Error>> {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
-        let query = x.query(q).build()?;
+        let query = x.query(&q).build()?;
         let results = query.search()?;
         let first_identifier = results.clone().datasets.unwrap().pop().unwrap().id;
         assert_eq!(first_identifier, "http://example.org/E-GEOD-5003");
@@ -450,7 +448,7 @@ mod tests {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
         // This is invalid and should not be allowed.
-        let _ = x.query(q.to_owned()).start(19).size(10005).build().unwrap();
+        let _ = x.query(&q).start(19).size(10005).build().unwrap();
     }
 
     #[should_panic]
@@ -459,12 +457,7 @@ mod tests {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
         // This is invalid and should not be allowed.
-        let _ = x
-            .query(q.to_owned())
-            .start(19)
-            .size(500000)
-            .build()
-            .unwrap();
+        let _ = x.query(&q).start(19).size(500000).build().unwrap();
     }
 
     #[test]
@@ -472,7 +465,7 @@ mod tests {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
         // This is invalid and should not be allowed.
-        let r = x.query(q.to_owned()).start(19).build().unwrap();
+        let r = x.query(&q).start(19).build().unwrap();
         let out = r.search();
         match out {
             Err(SearchError::InvalidStartValue(start, total)) => {
@@ -487,9 +480,9 @@ mod tests {
     #[test]
     fn test_request_errors_2() -> Result<(), Box<dyn Error>> {
         let mut x = SearchBuilder::default();
-        let q: String = "E-GEOD-5003".into();
+        let q = "E-GEOD-5003";
         // This is invalid and should not be allowed.
-        let r = x.query(q.to_owned()).build().unwrap();
+        let r = x.query(&q).build().unwrap();
         let out = r.search();
         match out {
             Err(_) => Err(Box::from("Wrong error value")),

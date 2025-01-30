@@ -85,6 +85,14 @@ pub mod searching {
         api::{Search, SearchBuilder, SearchBuilderError, SearchError},
         data::{self, OmicsDiResponse},
     };
+
+    pub enum Endpoint<T>
+    where
+        T: Pageable,
+    {
+        OmicsDi(T),
+    }
+
     #[derive(Debug)]
     pub enum SearchSize {
         Amount(i32),
@@ -115,16 +123,19 @@ pub mod searching {
         pages: Pager<T>,
         index: usize,
     }
-    #[derive(Debug)]
-    pub struct Page {
-        item: i64,
+
+    pub struct PageSearch<T>
+    where
+        T: Pageable,
+    {
+        pub item: Endpoint<T>,
     }
 
     impl<T> IntoIterator for Pager<T>
     where
-        T: Pageable,
+        T: Pageable + Clone + Copy,
     {
-        type Item = Page;
+        type Item = PageSearch<T>;
         type IntoIter = PagerIterator<T>;
 
         fn into_iter(self) -> PagerIterator<T> {
@@ -137,13 +148,14 @@ pub mod searching {
 
     impl<T> Iterator for PagerIterator<T>
     where
-        T: Pageable,
+        T: Pageable + Clone + Copy,
     {
-        type Item = Page;
-
-        fn next(&mut self) -> Option<Page> {
+        type Item = PageSearch<T>;
+        fn next(&mut self) -> Option<PageSearch<T>> {
             let result = match self.index {
-                0 => Page { item: 88 },
+                0 => PageSearch {
+                    item: Endpoint::OmicsDi(self.pages.search),
+                },
                 _ => return None,
             };
             self.index += 1;
@@ -160,6 +172,9 @@ pub mod searching {
         #[error("Failed to parse response: {0}")]
         Parse(#[from] serde_json::Error),
 
+        #[error("Build returned an error: {0}")]
+        BuildError(String), // Captures errors from APIs
+
         #[error("API returned an error: {0}")]
         Api(String), // Captures errors from APIs
 
@@ -168,20 +183,25 @@ pub mod searching {
     }
     /// For API methods that have a known size, and collect up to a max of the total size
     pub trait Pageable {
-        fn max_size(&self) -> i32;
         fn total_hits(&self) -> Result<i32, PagerError>;
+        fn search(&self, start: i32, size: i32) -> Result<OmicsDiResponse, PagerError>;
     }
 
-    impl Pageable for Search {
+    impl Pageable for SearchBuilder<'_> {
         /// Retrieve the max hits that can be retrieved in one go.
-        fn max_size(&self) -> i32 {
-            Self::MAX_REQUEST_SIZE
-        }
 
         /// Ask for the total amount of hits.
         fn total_hits(&self) -> Result<i32, PagerError> {
-            self.total_hit()
+            let search = self
+                .build()
+                .map_err(|x: SearchBuilderError| PagerError::BuildError(x.to_string()))?;
+            search
+                .total_hit()
                 .map_err(|arg0: SearchError| PagerError::Api(arg0.to_string()))
+        }
+
+        fn search(&self, start: i32, size: i32) -> Result<OmicsDiResponse, PagerError> {
+            todo!()
         }
     }
 }
@@ -192,7 +212,7 @@ mod tests {
 
     use iref::IriBuf;
 
-    use crate::biordf::core::searching::{Pageable, Pager, SearchSize};
+    use crate::biordf::core::searching::{Endpoint, Pageable, Pager, SearchSize};
     use crate::biordf::omicsdi::{api::SearchBuilder, data::OmicsDiResponse};
 
     #[test]
@@ -200,17 +220,17 @@ mod tests {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
         // This is invalid and should not be allowed.
-        let r = x.query(q.to_owned()).build().unwrap();
+        let r = x.query(&q);
         let out = r.total_hits()?;
+        let pager = Pager::new(x, SearchSize::Amount(1005));
         assert_eq!(out, 1);
 
-        let pager = Pager::new(
-            x.query("Rat".to_owned()).build().unwrap(),
-            SearchSize::Amount(1005),
-        );
-        for r in pager {
-            dbg!(r);
-        }
+        // for r in pager {
+        //     match r.item {
+        //         Endpoint::OmicsDi(x) => x.build()?,
+        //         _ => {}
+        //     }
+        // }
         Ok(())
     }
 
@@ -218,14 +238,13 @@ mod tests {
     fn test_basic_traits() -> Result<(), Box<dyn Error>> {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
-        let query_1 = x.query(q.clone()).build()?;
-        let query_2 = x.query(q.clone()).start(2).size(20).build()?;
+        let query_1 = x.query(&q).build()?;
+        let query_2 = x.query(&q).start(2).size(20).build()?;
 
         assert!(query_1 < query_2, "Check if the default is oke");
-        assert!(query_1.max_size() == 1_000, "The max should be oke");
 
-        let query_1 = x.query(q.clone()).start(2).size(20).build()?;
-        let query_2 = x.query(q).start(2).size(20).build()?;
+        let query_1 = x.query(&q).start(2).size(20).build()?;
+        let query_2 = x.query(&q).start(2).size(20).build()?;
         assert!(query_1 == query_2, "equal queries");
 
         let query_1 = x.query("".into()).start(2).size(200).build()?;
