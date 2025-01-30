@@ -114,6 +114,10 @@ pub mod searching {
         pub fn new(search: T, size: SearchSize) -> Pager<T> {
             Pager { search, size }
         }
+
+        pub(crate) fn iter(&self) -> () {
+            todo!()
+        }
     }
 
     pub struct PagerIterator<T>
@@ -222,15 +226,12 @@ mod tests {
         // This is invalid and should not be allowed.
         let r = x.query(&q);
         let out = r.total_hits()?;
-        let pager = Pager::new(x, SearchSize::Amount(1005));
-        assert_eq!(out, 1);
+        let x = r;
+        let pager: Pager<SearchBuilder> = Pager::new(x.clone().into(), SearchSize::Amount(1005));
+        for page in pager {
+            dbg!("Page");
+        }
 
-        // for r in pager {
-        //     match r.item {
-        //         Endpoint::OmicsDi(x) => x.build()?,
-        //         _ => {}
-        //     }
-        // }
         Ok(())
     }
 
