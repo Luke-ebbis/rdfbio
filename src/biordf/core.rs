@@ -80,8 +80,120 @@ pub mod data {
 }
 
 pub mod searching {
-    use crate::biordf::omicsdi::api::{Search, SearchError};
+    use std::{
+        pin::Pin,
+        sync::WaitTimeoutResult,
+        task::{Context, Poll},
+    };
+
+    use crate::biordf::omicsdi::{
+        api::{Search, SearchBuilder, SearchBuilderError, SearchError},
+        data::{self, OmicsDiResponse},
+    };
+    use async_trait::async_trait;
+
+    use futures::{
+        future::BoxFuture,
+        stream::{Stream, StreamExt},
+        FutureExt,
+    };
+    use rdf_types::dataset::DatasetMut;
     use thiserror::Error;
+
+    pub struct SearchPager {
+        search: Search,
+        current_offset: i32,
+        total_returned: i32,
+        search_size: i32,
+        results: Option<Vec<data::DataSet>>,
+        future: Option<BoxFuture<'static, Result<OmicsDiResponse, SearchError>>>, // Add this
+    }
+
+    impl SearchPager {
+        pub fn new(
+            search: &mut SearchBuilder,
+            max_search: i32,
+        ) -> Result<Self, SearchBuilderError> {
+            let s = search.size(max_search).build()?;
+            dbg!(s.clone());
+            Ok(Self {
+                search: s,
+                current_offset: 0,
+                search_size: max_search,
+                total_returned: 0,
+                future: None,
+                results: None,
+            })
+        }
+        fn make_future(&mut self) -> BoxFuture<'static, Result<OmicsDiResponse, SearchError>> {
+            let offset = self.current_offset;
+            let page_size = self.search.max_size();
+            let search_clone = self.search.clone();
+
+            async move {
+                let mut s = search_clone;
+                s.start = offset;
+                // s.size = page_size;
+                s.search().await
+            }
+            .boxed()
+        }
+    }
+
+    impl Stream for SearchPager {
+        type Item = Result<OmicsDiResponse, SearchError>;
+
+        fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            let this = self.as_mut().get_mut();
+
+            // Ensure a future is created only once
+            if this.future.is_none() {
+                this.future = Some(this.make_future());
+            }
+
+            let fut = this.future.as_mut().unwrap();
+            match fut.as_mut().poll(cx) {
+                Poll::Ready(Ok(response)) => {
+                    let num_results = response.datasets.as_ref().map_or(0, |d| d.len() as i32);
+                    this.total_returned += num_results;
+
+                    dbg!(
+                        this.current_offset,
+                        this.total_returned,
+                        this.search_size,
+                        response.count
+                    );
+
+                    // 🛑 **Stop condition: No results or exceeded total count**
+                    if num_results == 0
+                        || this.current_offset >= response.count as i32
+                        || this.total_returned >= this.search_size
+                    {
+                        dbg!("done");
+                        return Poll::Ready(Some(Ok(response)));
+                    }
+
+                    // ✅ Move to the next page using `max_size()`
+                    this.current_offset += this.search.max_size();
+                    this.future = None; // Reset future for next call
+                    match this.results {
+                        Some(r) => {
+                            let results_all = this.results.unwrap();
+                            let results_new = results_all.concat(response.datasets.unwrap());
+                        }
+                        None => this.results = Some(response.datasets.unwrap()),
+                    }
+                    // ✅ Move to the next page using `max_size()`
+                    Poll::Ready(Some(Ok(response)))
+                }
+                Poll::Ready(Err(err)) => {
+                    this.future = None; // Reset future on error
+                    Poll::Ready(Some(Err(err)))
+                }
+                Poll::Pending => Poll::Pending,
+            }
+        }
+    }
 
     #[derive(Debug, Error)]
     pub enum PagerError {
@@ -124,7 +236,10 @@ mod tests {
 
     use iref::IriBuf;
 
-    use crate::biordf::{core::searching::Pageable, omicsdi::api::SearchBuilder};
+    use crate::biordf::{
+        core::searching::{Pageable, SearchPager},
+        omicsdi::{api::SearchBuilder, data::OmicsDiResponse},
+    };
 
     #[tokio::test]
     async fn test_paging() -> Result<(), Box<dyn Error>> {
@@ -134,6 +249,26 @@ mod tests {
         let r = x.query(q.to_owned()).build().unwrap();
         let out = r.total_hits().await?;
         assert_eq!(out, 1);
+
+        Ok(())
+    }
+    use futures::stream::StreamExt;
+
+    #[tokio::test]
+    async fn test_paging_stream() -> Result<(), Box<dyn std::error::Error>> {
+        let mut binding = SearchBuilder::default();
+        let mut search = binding.query("Fish".to_owned());
+        let search_max = 10;
+        let pager = SearchPager::new(&mut search, search_max)?;
+
+        let mut stream = pager.boxed();
+        let mut res: Vec<OmicsDiResponse> = Vec::new();
+        while let Some(result) = stream.next().await {
+            let results = result?;
+            dbg!(&results);
+            res.push(results);
+        }
+        dbg!(res);
 
         Ok(())
     }
@@ -187,7 +322,7 @@ mod tests {
         Ok(())
     }
 
-    use rdf_types::static_iref::iri;
+    use rdf_types::{dataset::DatasetView, static_iref::iri};
     #[test]
     fn test_ld() -> () {
         #[derive(linked_data::Serialize, linked_data::Deserialize)]

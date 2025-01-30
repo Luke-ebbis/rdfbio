@@ -149,10 +149,10 @@ pub mod api {
         #[builder(setter(into), default = "0")]
         // sort: Option<Field>,
         /// The start of the query. Increment this to page.
-        pub start: i32,
+        pub(crate) start: i32,
         /// Size of the return, needs to be below 1000.
         #[builder(setter(into), default = "2")]
-        size: i32,
+        pub(crate) size: i32,
         /// face count. The summary of the dataset that is returned.
         #[builder(setter(into), default = "0")]
         facet_size: i32, // order: Option<Order>,
