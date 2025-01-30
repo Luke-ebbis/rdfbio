@@ -23,7 +23,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Query OmicsDI data
+    /// Query OmicsDI endpoint
     Query {
         /// The search query (required)
         #[arg()]
@@ -37,7 +37,7 @@ enum Commands {
         #[arg(short = 's', long, default_value = "0")]
         start: usize,
 
-        /// Output format: RDF or JSON
+        /// Output format: RDF (ttl) or JSON (json). The JSON retrieves the raw database hits, the ttl retrieves the linked data as interepreted by this program.
         #[arg(value_enum, short, long, default_value_t = OutputFormat::Json)]
         format: OutputFormat,
 
@@ -61,7 +61,8 @@ fn main() {
         } => {
             let mut binding = SearchBuilder::default();
             let size: i32 = size.try_into().expect("Size too large for i32");
-            let start: i32 = start.try_into().expect("Start value too large for i32");
+            let start: i32 =
+                start.try_into().expect("Start value too large for i32");
             let builder = binding.size(size).start(start);
             let query = builder.query(&query).build().unwrap();
             let results = query.search();
@@ -77,7 +78,8 @@ fn main() {
                 OutputFormat::Ttl => {
                     let quads = results.to_quads().unwrap();
                     if let Some(file) = output {
-                        std::fs::write(file, dump_quads(quads.to_owned())).unwrap();
+                        std::fs::write(file, dump_quads(quads.to_owned()))
+                            .unwrap();
                     } else {
                         println!("{}", dump_quads(quads.to_owned()));
                     }

@@ -116,6 +116,7 @@ pub mod searching {
         Amount(i32),
         All,
     }
+
     #[derive(Debug, Clone)]
     pub struct Pager<'a, T>
     where
@@ -139,58 +140,35 @@ pub mod searching {
             }
         }
 
-        // pub(crate) fn into_iter(&self) -> IntoPageIter<T> {
-        //     PagerIterator {
-        //         pages: self,
-        //         index: 0,
-        //     }
-        // }
+        pub(crate) fn into_iter(&'a self) -> PagerIterator<'a, T> {
+            PagerIterator {
+                pages: self,
+                index: 0,
+            }
+        }
     }
 
     pub struct PagerIterator<'a, T>
     where
         T: Pageable,
     {
-        pages: Pager<'a, T>,
+        pages: &'a Pager<'a, T>,
         index: usize,
     }
 
-    pub struct PageSearch<'a, T>
+    impl<'a, T> Iterator for PagerIterator<'a, T>
     where
         T: Pageable,
     {
-        pub item: Endpoint<'a, T>,
-    }
+        type Item = &'a Pager<'a, T>;
 
-    impl<'a, T> IntoIterator for Pager<'a, T>
-    where
-        T: Pageable + Clone + Copy + 'static,
-    {
-        type Item = PageSearch<'a, T>;
-        type IntoIter = PagerIterator<'a, T>;
-        fn into_iter(self) -> Self::IntoIter {
-            PagerIterator {
-                pages: self.to_owned(),
-                index: 0,
-            }
-        }
-    }
-    use std::iter::Iterator;
-
-    impl<'a, T> Iterator for PagerIterator<'a, T>
-    where
-        T: Pageable + Clone + Copy,
-    {
-        type Item = PageSearch<'a, T>;
         fn next(&mut self) -> Option<Self::Item> {
-            let result = match self.index {
-                0 => PageSearch {
-                    item: Endpoint::OmicsDi(self.pages.search),
-                },
-                _ => return None,
-            };
-            self.index += 1;
-            Some(result)
+            if self.index >= 10 {
+                self.index += 1;
+                Some(self.pages)
+            } else {
+                None
+            }
         }
     }
 
@@ -252,12 +230,14 @@ mod tests {
     use iref::IriBuf;
 
     use crate::biordf::core::searching::{
-        Endpoint, Pageable, Pager, SearchSize,
+        Endpoint, Pageable, Pager, PagerIterator, SearchSize,
     };
+
     use crate::biordf::omicsdi::{api::SearchBuilder, data::OmicsDiResponse};
+    use std::iter::IntoIterator;
 
     #[test]
-    #[ignore = "paging not yet implementedn"]
+    // #[ignore = "paging not yet implementedn"]
     fn test_paging() -> Result<(), Box<dyn Error>> {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
@@ -268,7 +248,7 @@ mod tests {
         let pager: Pager<SearchBuilder> =
             Pager::new(x, SearchSize::Amount(1005));
         for page in pager.into_iter() {
-            page.build();
+            let p = page;
             dbg!("Page");
         }
 
