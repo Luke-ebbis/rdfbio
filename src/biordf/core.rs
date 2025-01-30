@@ -47,8 +47,8 @@ pub mod data {
                             for mut org_quads in organism_quads {
                                 org_quads.0 = rdf_types::Id::Iri(focus.clone());
                                 match org_quads.2.clone() {
-                                    rdf_types::Term::Literal(Literal { value: l, type_ }) => {
-                                        if l != "" {
+                                    rdf_types::Term::Literal(Literal { value: l, type_: _ }) => {
+                                        if !l.is_empty() {
                                             quads.push(org_quads.to_owned());
                                         }
                                     }
@@ -80,10 +80,7 @@ pub mod data {
 }
 
 pub mod searching {
-    use crate::biordf::omicsdi::{
-        api::{Search, SearchError},
-        data::OmicsDiResponse,
-    };
+    use crate::biordf::omicsdi::api::{Search, SearchError};
     use thiserror::Error;
 
     #[derive(Debug, Error)]
