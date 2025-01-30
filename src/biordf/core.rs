@@ -79,194 +79,233 @@ pub mod data {
     }
 }
 
-// pub mod searching {
-//     use std::{
-//         pin::Pin,
-//         sync::WaitTimeoutResult,
-//         task::{Context, Poll},
-//     };
+pub mod searching {
 
-//     use crate::biordf::omicsdi::{
-//         api::{Search, SearchBuilder, SearchBuilderError, SearchError},
-//         data::{self, OmicsDiResponse},
-//     };
-//     use async_trait::async_trait;
+    use crate::biordf::omicsdi::{
+        api::{Search, SearchBuilder, SearchBuilderError, SearchError},
+        data::{self, OmicsDiResponse},
+    };
+    #[derive(Debug)]
+    pub enum SearchSize {
+        Amount(i32),
+        All,
+    }
+    #[derive(Debug)]
+    pub struct Pager<T>
+    where
+        T: Pageable,
+    {
+        search: T,
+        size: SearchSize,
+    }
 
-//     use futures::{
-//         future::BoxFuture,
-//         stream::{Stream, StreamExt},
-//         FutureExt,
-//     };
-//     use rdf_types::dataset::DatasetMut;
-//     use thiserror::Error;
-//     #[derive(Debug, Error)]
-//     pub enum PagerError {
-//         #[error("Request failed: {0}")]
-//         Request(#[from] reqwest::Error),
+    impl<T> Pager<T>
+    where
+        T: Pageable,
+    {
+        pub fn new(search: T, size: SearchSize) -> Pager<T> {
+            Pager { search, size }
+        }
+    }
 
-//         #[error("Failed to parse response: {0}")]
-//         Parse(#[from] serde_json::Error),
+    pub struct PagerIterator<T>
+    where
+        T: Pageable,
+    {
+        pages: Pager<T>,
+        index: usize,
+    }
+    #[derive(Debug)]
+    pub struct Page {
+        item: i64,
+    }
 
-//         #[error("API returned an error: {0}")]
-//         Api(String), // Captures errors from APIs
+    impl<T> IntoIterator for Pager<T>
+    where
+        T: Pageable,
+    {
+        type Item = Page;
+        type IntoIter = PagerIterator<T>;
 
-//         #[error("Pagination limit exceeded. Start: {start}, Total Hits: {total_hits}")]
-//         PaginationLimit { start: i32, total_hits: i32 },
-//     }
-//     /// For API methods that have a known size, and collect up to a max of the total size
-//     pub trait Pageable {
-//         fn max_size(&self) -> i32;
-//         fn total_hits(&self) -> Result<i32, PagerError>;
-//     }
+        fn into_iter(self) -> PagerIterator<T> {
+            PagerIterator {
+                pages: self,
+                index: 0,
+            }
+        }
+    }
 
-//     impl Pageable for Search {
-//         /// Retrieve the max hits that can be retrieved in one go.
-//         fn max_size(&self) -> i32 {
-//             Self::MAX_REQUEST_SIZE
-//         }
+    impl<T> Iterator for PagerIterator<T>
+    where
+        T: Pageable,
+    {
+        type Item = Page;
 
-//         /// Ask for the total amount of hits.
-//         fn total_hits(&self) -> Result<i32, PagerError> {
-//             self.total_hit()
-//                 .map_err(|arg0: SearchError| PagerError::Api(arg0.to_string()))
-//         }
-//     }
-// }
+        fn next(&mut self) -> Option<Page> {
+            let result = match self.index {
+                0 => Page { item: 88 },
+                _ => return None,
+            };
+            self.index += 1;
+            Some(result)
+        }
+    }
 
-// #[cfg(test)]
-// mod tests {
-//     use std::error::Error;
+    use thiserror::Error;
+    #[derive(Debug, Error)]
+    pub enum PagerError {
+        #[error("Request failed: {0}")]
+        Request(#[from] reqwest::Error),
 
-//     use iref::IriBuf;
+        #[error("Failed to parse response: {0}")]
+        Parse(#[from] serde_json::Error),
 
-//     use crate::biordf::core::searching::Pageable;
-//     use crate::biordf::omicsdi::{api::SearchBuilder, data::OmicsDiResponse};
+        #[error("API returned an error: {0}")]
+        Api(String), // Captures errors from APIs
 
-//     #[test]
-//     fn test_paging() -> Result<(), Box<dyn Error>> {
-//         let mut x = SearchBuilder::default();
-//         let q: String = "E-GEOD-5003".into();
-//         // This is invalid and should not be allowed.
-//         let r = x.query(q.to_owned()).build().unwrap();
-//         let out = r.total_hits().await?;
-//         assert_eq!(out, 1);
+        #[error("Pagination limit exceeded. Start: {start}, Total Hits: {total_hits}")]
+        PaginationLimit { start: i32, total_hits: i32 },
+    }
+    /// For API methods that have a known size, and collect up to a max of the total size
+    pub trait Pageable {
+        fn max_size(&self) -> i32;
+        fn total_hits(&self) -> Result<i32, PagerError>;
+    }
 
-//         Ok(())
-//     }
-//     use futures::stream::StreamExt;
+    impl Pageable for Search {
+        /// Retrieve the max hits that can be retrieved in one go.
+        fn max_size(&self) -> i32 {
+            Self::MAX_REQUEST_SIZE
+        }
 
-//     #[test]
-//     #[ignore = "No paging capacities yet"]
-//     fn test_paging_stream() -> Result<(), Box<dyn std::error::Error>> {
-//         let mut binding = SearchBuilder::default();
-//         let mut search = binding.query("Fish".to_owned());
-//         let search_max = 10;
-//         // let pager = SearchPager::new(&mut search, search_max)?;
+        /// Ask for the total amount of hits.
+        fn total_hits(&self) -> Result<i32, PagerError> {
+            self.total_hit()
+                .map_err(|arg0: SearchError| PagerError::Api(arg0.to_string()))
+        }
+    }
+}
 
-//         let mut stream = pager.boxed();
-//         let mut res: Vec<OmicsDiResponse> = Vec::new();
-//         while let Some(result) = stream.next() {
-//             let results = result?;
-//             dbg!(&results);
-//             res.push(results);
-//         }
-//         dbg!(res);
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
 
-//         Ok(())
-//     }
+    use iref::IriBuf;
 
-//     #[test]
-//     fn test_basic_traits() -> Result<(), Box<dyn Error>> {
-//         let mut x = SearchBuilder::default();
-//         let q: String = "E-GEOD-5003".into();
-//         let query_1 = x.query(q.clone()).build()?;
-//         let query_2 = x.query(q.clone()).start(2).size(20).build()?;
+    use crate::biordf::core::searching::{Pageable, Pager, SearchSize};
+    use crate::biordf::omicsdi::{api::SearchBuilder, data::OmicsDiResponse};
 
-//         assert!(query_1 < query_2, "Check if the default is oke");
-//         assert!(query_1.max_size() == 1_000, "The max should be oke");
+    #[test]
+    fn test_paging() -> Result<(), Box<dyn Error>> {
+        let mut x = SearchBuilder::default();
+        let q: String = "E-GEOD-5003".into();
+        // This is invalid and should not be allowed.
+        let r = x.query(q.to_owned()).build().unwrap();
+        let out = r.total_hits()?;
+        assert_eq!(out, 1);
 
-//         let query_1 = x.query(q.clone()).start(2).size(20).build()?;
-//         let query_2 = x.query(q).start(2).size(20).build()?;
-//         assert!(query_1 == query_2, "equal queries");
+        let pager = Pager::new(
+            x.query("Rat".to_owned()).build().unwrap(),
+            SearchSize::Amount(1005),
+        );
+        for r in pager {
+            dbg!(r);
+        }
+        Ok(())
+    }
 
-//         let query_1 = x.query("".into()).start(2).size(200).build()?;
-//         let query_2 = x.query("".into()).start(2).size(20).build()?;
-//         assert!(query_1 != query_2, "equal queries");
+    #[test]
+    fn test_basic_traits() -> Result<(), Box<dyn Error>> {
+        let mut x = SearchBuilder::default();
+        let q: String = "E-GEOD-5003".into();
+        let query_1 = x.query(q.clone()).build()?;
+        let query_2 = x.query(q.clone()).start(2).size(20).build()?;
 
-//         let query_1 = x.query("".into()).start(2).size(20).build()?;
-//         let query_2 = x
-//             .query("".into())
-//             .start(2)
-//             .size(20)
-//             .facet_size(10)
-//             .build()?;
-//         assert!(query_1 != query_2, "equal queries");
+        assert!(query_1 < query_2, "Check if the default is oke");
+        assert!(query_1.max_size() == 1_000, "The max should be oke");
 
-//         let query_1 = x.query("".into()).start(2).size(20).build()?;
-//         let query_2 = x.query("".into()).start(3).size(20).build()?;
-//         assert!(query_1 != query_2);
-//         assert!(query_1 < query_2);
+        let query_1 = x.query(q.clone()).start(2).size(20).build()?;
+        let query_2 = x.query(q).start(2).size(20).build()?;
+        assert!(query_1 == query_2, "equal queries");
 
-//         let query_1 = x.query("".into()).start(2).size(200).build()?;
-//         let query_2 = x.query("".into()).start(3).size(20).build()?;
-//         assert!(query_1 != query_2);
-//         assert!(query_1 < query_2);
+        let query_1 = x.query("".into()).start(2).size(200).build()?;
+        let query_2 = x.query("".into()).start(2).size(20).build()?;
+        assert!(query_1 != query_2, "equal queries");
 
-//         let query_1 = x.query("".into()).start(1000).size(20).build()?;
-//         let query_2 = x.query("".into()).start(3).size(20).build()?;
-//         assert!(query_1 != query_2);
-//         assert!(query_1 > query_2);
+        let query_1 = x.query("".into()).start(2).size(20).build()?;
+        let query_2 = x
+            .query("".into())
+            .start(2)
+            .size(20)
+            .facet_size(10)
+            .build()?;
+        assert!(query_1 != query_2, "equal queries");
 
-//         let query_1 = x.query("".into()).start(1000).size(200).build()?;
-//         let query_2 = x.query("".into()).start(3).size(20).build()?;
-//         assert!(query_1 != query_2);
-//         assert!(query_1 > query_2);
-//         Ok(())
-//     }
+        let query_1 = x.query("".into()).start(2).size(20).build()?;
+        let query_2 = x.query("".into()).start(3).size(20).build()?;
+        assert!(query_1 != query_2);
+        assert!(query_1 < query_2);
 
-//     use rdf_types::{dataset::DatasetView, static_iref::iri};
-//     #[test]
-//     fn test_ld() -> () {
-//         #[derive(linked_data::Serialize, linked_data::Deserialize)]
-//         #[ld(prefix("ex" = "http://example.org/"))]
-//         struct Foo {
-//             #[ld(id)]
-//             id: IriBuf,
+        let query_1 = x.query("".into()).start(2).size(200).build()?;
+        let query_2 = x.query("".into()).start(3).size(20).build()?;
+        assert!(query_1 != query_2);
+        assert!(query_1 < query_2);
 
-//             #[ld("ex:name")]
-//             name: String,
+        let query_1 = x.query("".into()).start(1000).size(20).build()?;
+        let query_2 = x.query("".into()).start(3).size(20).build()?;
+        assert!(query_1 != query_2);
+        assert!(query_1 > query_2);
 
-//             #[ld("ex:email")]
-//             email: String,
+        let query_1 = x.query("".into()).start(1000).size(200).build()?;
+        let query_2 = x.query("".into()).start(3).size(20).build()?;
+        assert!(query_1 != query_2);
+        assert!(query_1 > query_2);
+        Ok(())
+    }
 
-//             #[ld("ex:numbers")]
-//             numbers: Vec<i64>,
-//             #[ld("ex:maybe")]
-//             maybe: Option<String>,
-//             #[ld("ex:alot")]
-//             alot: Vec<Nested>,
-//         }
+    use rdf_types::{dataset::DatasetView, static_iref::iri};
+    #[test]
+    fn test_ld() -> () {
+        #[derive(linked_data::Serialize, linked_data::Deserialize)]
+        #[ld(prefix("ex" = "http://example.org/"))]
+        struct Foo {
+            #[ld(id)]
+            id: IriBuf,
 
-//         #[derive(linked_data::Serialize, linked_data::Deserialize)]
-//         #[ld(prefix("ex" = "http://example.org/"))]
-//         #[ld(type = "ex:object")]
-//         struct Nested {
-//             #[ld("ex:num")]
-//             m: i64,
-//         }
+            #[ld("ex:name")]
+            name: String,
 
-//         let _value = Foo {
-//             id: iri!("http://example.org/JohnSmith").to_owned(),
-//             name: "John Smith".to_owned(),
-//             email: "john.smith@example.org".to_owned(),
-//             numbers: vec![1, 133],
-//             maybe: Some("S".into()),
-//             alot: vec![Nested { m: 10 }],
-//         };
+            #[ld("ex:email")]
+            email: String,
 
-//         // for quad in quads {
-//         //     use rdf_types::RdfDisplay;
-//         //     println!("{} .", quad.rdf_display())
-//         // }
-//     }
-// }
+            #[ld("ex:numbers")]
+            numbers: Vec<i64>,
+            #[ld("ex:maybe")]
+            maybe: Option<String>,
+            #[ld("ex:alot")]
+            alot: Vec<Nested>,
+        }
+
+        #[derive(linked_data::Serialize, linked_data::Deserialize)]
+        #[ld(prefix("ex" = "http://example.org/"))]
+        #[ld(type = "ex:object")]
+        struct Nested {
+            #[ld("ex:num")]
+            m: i64,
+        }
+
+        let _value = Foo {
+            id: iri!("http://example.org/JohnSmith").to_owned(),
+            name: "John Smith".to_owned(),
+            email: "john.smith@example.org".to_owned(),
+            numbers: vec![1, 133],
+            maybe: Some("S".into()),
+            alot: vec![Nested { m: 10 }],
+        };
+
+        // for quad in quads {
+        //     use rdf_types::RdfDisplay;
+        //     println!("{} .", quad.rdf_display())
+        // }
+    }
+}
