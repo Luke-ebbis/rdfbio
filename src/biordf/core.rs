@@ -80,24 +80,43 @@ pub mod data {
 }
 
 pub mod searching {
-    use crate::biordf::omicsdi::api::{Search, SearchError};
+    use crate::biordf::omicsdi::{
+        api::{Search, SearchError},
+        data::OmicsDiResponse,
+    };
+    use thiserror::Error;
 
+    #[derive(Debug, Error)]
+    pub enum PagerError {
+        #[error("Request failed: {0}")]
+        Request(#[from] reqwest::Error),
+
+        #[error("Failed to parse response: {0}")]
+        Parse(#[from] serde_json::Error),
+
+        #[error("API returned an error: {0}")]
+        Api(String), // Captures errors from APIs
+
+        #[error("Pagination limit exceeded. Start: {start}, Total Hits: {total_hits}")]
+        PaginationLimit { start: i32, total_hits: i32 },
+    }
     /// For API methods that have a known size, and collect up to a max of the total size
     pub trait Pageable {
-        /// Get the total request size for this endpoint
         fn max_size(&self) -> i32;
-
-        /// Get the total amount of hits for a search.
-        fn total_hits(&self) -> impl std::future::Future<Output = Result<i32, SearchError>> + Send;
+        fn total_hits(&self) -> impl std::future::Future<Output = Result<i32, PagerError>> + Send;
     }
 
     impl Pageable for Search {
+        /// Retrieve the max hits that can be retrieved in one go.
         fn max_size(&self) -> i32 {
             Self::MAX_REQUEST_SIZE
         }
 
-        async fn total_hits(&self) -> Result<i32, SearchError> {
-            self.total_hit().await
+        /// Ask for the total amount of hits.
+        async fn total_hits(&self) -> Result<i32, PagerError> {
+            self.total_hit()
+                .await
+                .map_err(|arg0: SearchError| PagerError::Api(arg0.to_string()))
         }
     }
 }
