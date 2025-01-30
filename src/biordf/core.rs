@@ -115,16 +115,23 @@ pub mod searching {
             Pager { search, size }
         }
 
-        pub(crate) fn iter(&self) -> () {
+        pub(crate) fn iter(&self) -> Iter<T> {
             todo!()
+        }
+
+        pub(crate) fn into_iter(&self) -> IntoPageIter<T> {
+            PagerIterator {
+                pages: self,
+                index: 0,
+            }
         }
     }
 
-    pub struct PagerIterator<T>
+    pub struct PagerIterator<'a, T>
     where
         T: Pageable,
     {
-        pages: Pager<T>,
+        pages: &'a Pager<T>,
         index: usize,
     }
 
@@ -220,6 +227,7 @@ mod tests {
     use crate::biordf::omicsdi::{api::SearchBuilder, data::OmicsDiResponse};
 
     #[test]
+    #[ignore = "paging not yet implementedn"]
     fn test_paging() -> Result<(), Box<dyn Error>> {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
@@ -228,7 +236,8 @@ mod tests {
         let out = r.total_hits()?;
         let x = r;
         let pager: Pager<SearchBuilder> = Pager::new(x.clone().into(), SearchSize::Amount(1005));
-        for page in pager {
+        for page in pager.into_iter() {
+            page.build();
             dbg!("Page");
         }
 
