@@ -187,10 +187,10 @@ pub mod api {
         const REST_URL: &str = "https://www.omicsdi.org/ws/dataset/search";
         pub const MAX_REQUEST_SIZE: i32 = SearchBuilder::MAX_REQUEST_SIZE;
 
-        pub async fn total_hit(&self) -> Result<i32, SearchError> {
+        pub fn total_hit(&self) -> Result<i32, SearchError> {
             let mut search = self.clone();
             search.size = 1;
-            let hits = search.search().await;
+            let hits = search.search();
             match hits {
                 Err(SearchError::InvalidStartValue(_, end)) => Ok(end),
                 Ok(r) => Ok(r.count as i32),
@@ -198,19 +198,18 @@ pub mod api {
             }
         }
 
-        async fn request(
+        fn request(
             params: Vec<(&str, String)>,
             header: &str,
         ) -> Result<OmicsDiResponse, SearchError> {
             let url = Self::REST_URL;
             let url = reqwest::Url::parse_with_params(url, params)
                 .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
-            let client = reqwest::Client::new();
+            let client = reqwest::blocking::Client::new();
             let response = client
                 .get(url)
                 .header("accept", header)
                 .send()
-                .await
                 .map_err(|_| {
                     SearchError::RequestFailed(
                         reqwest::StatusCode::INTERNAL_SERVER_ERROR,
@@ -219,7 +218,7 @@ pub mod api {
                 })?;
 
             let status = response.status();
-            let text = response.text().await?;
+            let text = response.text()?;
 
             if status.is_success() {
                 let json_text: String = text;
@@ -233,7 +232,7 @@ pub mod api {
         }
         /// Search the OmicsDi database with a search string.
         ///
-        pub async fn search(self) -> Result<OmicsDiResponse, SearchError> {
+        pub fn search(self) -> Result<OmicsDiResponse, SearchError> {
             let accept_header = "application/json";
             let x = self.query;
             let start = self.start;
@@ -243,7 +242,7 @@ pub mod api {
                 ("start", start.to_string()),
                 ("size", size.to_string()),
             ];
-            let out = Self::request(params, accept_header).await?;
+            let out = Self::request(params, accept_header)?;
             Ok(out)
         }
     }
@@ -432,12 +431,12 @@ mod tests {
     use crate::biordf::omicsdi::api::{SearchBuilder, SearchError};
 
     /// Database connection check...
-    #[tokio::test]
-    async fn test_input() -> Result<(), Box<dyn Error>> {
+    #[test]
+    fn test_input() -> Result<(), Box<dyn Error>> {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
         let query = x.query(q).build()?;
-        let results = query.search().await?;
+        let results = query.search()?;
         let first_identifier = results.clone().datasets.unwrap().pop().unwrap().id;
         assert_eq!(first_identifier, "http://example.org/E-GEOD-5003");
 
@@ -446,8 +445,8 @@ mod tests {
     }
 
     #[should_panic]
-    #[tokio::test]
-    async fn test_pre_search_validation_error_size_and_start() -> () {
+    #[test]
+    fn test_pre_search_validation_error_size_and_start() -> () {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
         // This is invalid and should not be allowed.
@@ -455,8 +454,8 @@ mod tests {
     }
 
     #[should_panic]
-    #[tokio::test]
-    async fn test_pre_search_validation_error_size() -> () {
+    #[test]
+    fn test_pre_search_validation_error_size() -> () {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
         // This is invalid and should not be allowed.
@@ -468,13 +467,13 @@ mod tests {
             .unwrap();
     }
 
-    #[tokio::test]
-    async fn test_request_errors() -> Result<(), Box<dyn Error>> {
+    #[test]
+    fn test_request_errors() -> Result<(), Box<dyn Error>> {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
         // This is invalid and should not be allowed.
         let r = x.query(q.to_owned()).start(19).build().unwrap();
-        let out = r.search().await;
+        let out = r.search();
         match out {
             Err(SearchError::InvalidStartValue(start, total)) => {
                 assert!(start == 19);
@@ -485,13 +484,13 @@ mod tests {
             Ok(_) => Err(Box::from("this request should have failed")),
         }
     }
-    #[tokio::test]
-    async fn test_request_errors_2() -> Result<(), Box<dyn Error>> {
+    #[test]
+    fn test_request_errors_2() -> Result<(), Box<dyn Error>> {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
         // This is invalid and should not be allowed.
         let r = x.query(q.to_owned()).build().unwrap();
-        let out = r.search().await;
+        let out = r.search();
         match out {
             Err(_) => Err(Box::from("Wrong error value")),
             Ok(r) => {

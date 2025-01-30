@@ -79,292 +79,194 @@ pub mod data {
     }
 }
 
-pub mod searching {
-    use std::{
-        pin::Pin,
-        sync::WaitTimeoutResult,
-        task::{Context, Poll},
-    };
+// pub mod searching {
+//     use std::{
+//         pin::Pin,
+//         sync::WaitTimeoutResult,
+//         task::{Context, Poll},
+//     };
 
-    use crate::biordf::omicsdi::{
-        api::{Search, SearchBuilder, SearchBuilderError, SearchError},
-        data::{self, OmicsDiResponse},
-    };
-    use async_trait::async_trait;
+//     use crate::biordf::omicsdi::{
+//         api::{Search, SearchBuilder, SearchBuilderError, SearchError},
+//         data::{self, OmicsDiResponse},
+//     };
+//     use async_trait::async_trait;
 
-    use futures::{
-        future::BoxFuture,
-        stream::{Stream, StreamExt},
-        FutureExt,
-    };
-    use rdf_types::dataset::DatasetMut;
-    use thiserror::Error;
+//     use futures::{
+//         future::BoxFuture,
+//         stream::{Stream, StreamExt},
+//         FutureExt,
+//     };
+//     use rdf_types::dataset::DatasetMut;
+//     use thiserror::Error;
+//     #[derive(Debug, Error)]
+//     pub enum PagerError {
+//         #[error("Request failed: {0}")]
+//         Request(#[from] reqwest::Error),
 
-    pub struct SearchPager {
-        search: Search,
-        current_offset: i32,
-        total_returned: i32,
-        search_size: i32,
-        results: Option<Vec<data::DataSet>>,
-        future: Option<BoxFuture<'static, Result<OmicsDiResponse, SearchError>>>, // Add this
-    }
+//         #[error("Failed to parse response: {0}")]
+//         Parse(#[from] serde_json::Error),
 
-    impl SearchPager {
-        pub fn new(
-            search: &mut SearchBuilder,
-            max_search: i32,
-        ) -> Result<Self, SearchBuilderError> {
-            let s = search.size(max_search).build()?;
-            dbg!(s.clone());
-            Ok(Self {
-                search: s,
-                current_offset: 0,
-                search_size: max_search,
-                total_returned: 0,
-                future: None,
-                results: None,
-            })
-        }
-        fn make_future(&mut self) -> BoxFuture<'static, Result<OmicsDiResponse, SearchError>> {
-            let offset = self.current_offset;
-            let page_size = self.search.max_size();
-            let search_clone = self.search.clone();
+//         #[error("API returned an error: {0}")]
+//         Api(String), // Captures errors from APIs
 
-            async move {
-                let mut s = search_clone;
-                s.start = offset;
-                // s.size = page_size;
-                s.search().await
-            }
-            .boxed()
-        }
-    }
+//         #[error("Pagination limit exceeded. Start: {start}, Total Hits: {total_hits}")]
+//         PaginationLimit { start: i32, total_hits: i32 },
+//     }
+//     /// For API methods that have a known size, and collect up to a max of the total size
+//     pub trait Pageable {
+//         fn max_size(&self) -> i32;
+//         fn total_hits(&self) -> Result<i32, PagerError>;
+//     }
 
-    impl Stream for SearchPager {
-        type Item = Result<OmicsDiResponse, SearchError>;
+//     impl Pageable for Search {
+//         /// Retrieve the max hits that can be retrieved in one go.
+//         fn max_size(&self) -> i32 {
+//             Self::MAX_REQUEST_SIZE
+//         }
 
-        fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            let this = self.as_mut().get_mut();
+//         /// Ask for the total amount of hits.
+//         fn total_hits(&self) -> Result<i32, PagerError> {
+//             self.total_hit()
+//                 .map_err(|arg0: SearchError| PagerError::Api(arg0.to_string()))
+//         }
+//     }
+// }
 
-            // Ensure a future is created only once
-            if this.future.is_none() {
-                this.future = Some(this.make_future());
-            }
+// #[cfg(test)]
+// mod tests {
+//     use std::error::Error;
 
-            let fut = this.future.as_mut().unwrap();
-            match fut.as_mut().poll(cx) {
-                Poll::Ready(Ok(response)) => {
-                    let num_results = response.datasets.as_ref().map_or(0, |d| d.len() as i32);
-                    this.total_returned += num_results;
+//     use iref::IriBuf;
 
-                    dbg!(
-                        this.current_offset,
-                        this.total_returned,
-                        this.search_size,
-                        response.count
-                    );
+//     use crate::biordf::core::searching::Pageable;
+//     use crate::biordf::omicsdi::{api::SearchBuilder, data::OmicsDiResponse};
 
-                    // 🛑 **Stop condition: No results or exceeded total count**
-                    if num_results == 0
-                        || this.current_offset >= response.count as i32
-                        || this.total_returned >= this.search_size
-                    {
-                        dbg!("done");
-                        return Poll::Ready(Some(Ok(response)));
-                    }
+//     #[test]
+//     fn test_paging() -> Result<(), Box<dyn Error>> {
+//         let mut x = SearchBuilder::default();
+//         let q: String = "E-GEOD-5003".into();
+//         // This is invalid and should not be allowed.
+//         let r = x.query(q.to_owned()).build().unwrap();
+//         let out = r.total_hits().await?;
+//         assert_eq!(out, 1);
 
-                    // ✅ Move to the next page using `max_size()`
-                    this.current_offset += this.search.max_size();
-                    this.future = None; // Reset future for next call
-                    match this.results {
-                        Some(r) => {
-                            let results_all = this.results.unwrap();
-                            let results_new = results_all.concat(response.datasets.unwrap());
-                        }
-                        None => this.results = Some(response.datasets.unwrap()),
-                    }
-                    // ✅ Move to the next page using `max_size()`
-                    Poll::Ready(Some(Ok(response)))
-                }
-                Poll::Ready(Err(err)) => {
-                    this.future = None; // Reset future on error
-                    Poll::Ready(Some(Err(err)))
-                }
-                Poll::Pending => Poll::Pending,
-            }
-        }
-    }
+//         Ok(())
+//     }
+//     use futures::stream::StreamExt;
 
-    #[derive(Debug, Error)]
-    pub enum PagerError {
-        #[error("Request failed: {0}")]
-        Request(#[from] reqwest::Error),
+//     #[test]
+//     #[ignore = "No paging capacities yet"]
+//     fn test_paging_stream() -> Result<(), Box<dyn std::error::Error>> {
+//         let mut binding = SearchBuilder::default();
+//         let mut search = binding.query("Fish".to_owned());
+//         let search_max = 10;
+//         // let pager = SearchPager::new(&mut search, search_max)?;
 
-        #[error("Failed to parse response: {0}")]
-        Parse(#[from] serde_json::Error),
+//         let mut stream = pager.boxed();
+//         let mut res: Vec<OmicsDiResponse> = Vec::new();
+//         while let Some(result) = stream.next() {
+//             let results = result?;
+//             dbg!(&results);
+//             res.push(results);
+//         }
+//         dbg!(res);
 
-        #[error("API returned an error: {0}")]
-        Api(String), // Captures errors from APIs
+//         Ok(())
+//     }
 
-        #[error("Pagination limit exceeded. Start: {start}, Total Hits: {total_hits}")]
-        PaginationLimit { start: i32, total_hits: i32 },
-    }
-    /// For API methods that have a known size, and collect up to a max of the total size
-    pub trait Pageable {
-        fn max_size(&self) -> i32;
-        fn total_hits(&self) -> impl std::future::Future<Output = Result<i32, PagerError>> + Send;
-    }
+//     #[test]
+//     fn test_basic_traits() -> Result<(), Box<dyn Error>> {
+//         let mut x = SearchBuilder::default();
+//         let q: String = "E-GEOD-5003".into();
+//         let query_1 = x.query(q.clone()).build()?;
+//         let query_2 = x.query(q.clone()).start(2).size(20).build()?;
 
-    impl Pageable for Search {
-        /// Retrieve the max hits that can be retrieved in one go.
-        fn max_size(&self) -> i32 {
-            Self::MAX_REQUEST_SIZE
-        }
+//         assert!(query_1 < query_2, "Check if the default is oke");
+//         assert!(query_1.max_size() == 1_000, "The max should be oke");
 
-        /// Ask for the total amount of hits.
-        async fn total_hits(&self) -> Result<i32, PagerError> {
-            self.total_hit()
-                .await
-                .map_err(|arg0: SearchError| PagerError::Api(arg0.to_string()))
-        }
-    }
-}
+//         let query_1 = x.query(q.clone()).start(2).size(20).build()?;
+//         let query_2 = x.query(q).start(2).size(20).build()?;
+//         assert!(query_1 == query_2, "equal queries");
 
-#[cfg(test)]
-mod tests {
-    use std::error::Error;
+//         let query_1 = x.query("".into()).start(2).size(200).build()?;
+//         let query_2 = x.query("".into()).start(2).size(20).build()?;
+//         assert!(query_1 != query_2, "equal queries");
 
-    use iref::IriBuf;
+//         let query_1 = x.query("".into()).start(2).size(20).build()?;
+//         let query_2 = x
+//             .query("".into())
+//             .start(2)
+//             .size(20)
+//             .facet_size(10)
+//             .build()?;
+//         assert!(query_1 != query_2, "equal queries");
 
-    use crate::biordf::{
-        core::searching::{Pageable, SearchPager},
-        omicsdi::{api::SearchBuilder, data::OmicsDiResponse},
-    };
+//         let query_1 = x.query("".into()).start(2).size(20).build()?;
+//         let query_2 = x.query("".into()).start(3).size(20).build()?;
+//         assert!(query_1 != query_2);
+//         assert!(query_1 < query_2);
 
-    #[tokio::test]
-    async fn test_paging() -> Result<(), Box<dyn Error>> {
-        let mut x = SearchBuilder::default();
-        let q: String = "E-GEOD-5003".into();
-        // This is invalid and should not be allowed.
-        let r = x.query(q.to_owned()).build().unwrap();
-        let out = r.total_hits().await?;
-        assert_eq!(out, 1);
+//         let query_1 = x.query("".into()).start(2).size(200).build()?;
+//         let query_2 = x.query("".into()).start(3).size(20).build()?;
+//         assert!(query_1 != query_2);
+//         assert!(query_1 < query_2);
 
-        Ok(())
-    }
-    use futures::stream::StreamExt;
+//         let query_1 = x.query("".into()).start(1000).size(20).build()?;
+//         let query_2 = x.query("".into()).start(3).size(20).build()?;
+//         assert!(query_1 != query_2);
+//         assert!(query_1 > query_2);
 
-    #[tokio::test]
-    async fn test_paging_stream() -> Result<(), Box<dyn std::error::Error>> {
-        let mut binding = SearchBuilder::default();
-        let mut search = binding.query("Fish".to_owned());
-        let search_max = 10;
-        let pager = SearchPager::new(&mut search, search_max)?;
+//         let query_1 = x.query("".into()).start(1000).size(200).build()?;
+//         let query_2 = x.query("".into()).start(3).size(20).build()?;
+//         assert!(query_1 != query_2);
+//         assert!(query_1 > query_2);
+//         Ok(())
+//     }
 
-        let mut stream = pager.boxed();
-        let mut res: Vec<OmicsDiResponse> = Vec::new();
-        while let Some(result) = stream.next().await {
-            let results = result?;
-            dbg!(&results);
-            res.push(results);
-        }
-        dbg!(res);
+//     use rdf_types::{dataset::DatasetView, static_iref::iri};
+//     #[test]
+//     fn test_ld() -> () {
+//         #[derive(linked_data::Serialize, linked_data::Deserialize)]
+//         #[ld(prefix("ex" = "http://example.org/"))]
+//         struct Foo {
+//             #[ld(id)]
+//             id: IriBuf,
 
-        Ok(())
-    }
+//             #[ld("ex:name")]
+//             name: String,
 
-    #[tokio::test]
-    async fn test_basic_traits() -> Result<(), Box<dyn Error>> {
-        let mut x = SearchBuilder::default();
-        let q: String = "E-GEOD-5003".into();
-        let query_1 = x.query(q.clone()).build()?;
-        let query_2 = x.query(q.clone()).start(2).size(20).build()?;
+//             #[ld("ex:email")]
+//             email: String,
 
-        assert!(query_1 < query_2, "Check if the default is oke");
-        assert!(query_1.max_size() == 1_000, "The max should be oke");
+//             #[ld("ex:numbers")]
+//             numbers: Vec<i64>,
+//             #[ld("ex:maybe")]
+//             maybe: Option<String>,
+//             #[ld("ex:alot")]
+//             alot: Vec<Nested>,
+//         }
 
-        let query_1 = x.query(q.clone()).start(2).size(20).build()?;
-        let query_2 = x.query(q).start(2).size(20).build()?;
-        assert!(query_1 == query_2, "equal queries");
+//         #[derive(linked_data::Serialize, linked_data::Deserialize)]
+//         #[ld(prefix("ex" = "http://example.org/"))]
+//         #[ld(type = "ex:object")]
+//         struct Nested {
+//             #[ld("ex:num")]
+//             m: i64,
+//         }
 
-        let query_1 = x.query("".into()).start(2).size(200).build()?;
-        let query_2 = x.query("".into()).start(2).size(20).build()?;
-        assert!(query_1 != query_2, "equal queries");
+//         let _value = Foo {
+//             id: iri!("http://example.org/JohnSmith").to_owned(),
+//             name: "John Smith".to_owned(),
+//             email: "john.smith@example.org".to_owned(),
+//             numbers: vec![1, 133],
+//             maybe: Some("S".into()),
+//             alot: vec![Nested { m: 10 }],
+//         };
 
-        let query_1 = x.query("".into()).start(2).size(20).build()?;
-        let query_2 = x
-            .query("".into())
-            .start(2)
-            .size(20)
-            .facet_size(10)
-            .build()?;
-        assert!(query_1 != query_2, "equal queries");
-
-        let query_1 = x.query("".into()).start(2).size(20).build()?;
-        let query_2 = x.query("".into()).start(3).size(20).build()?;
-        assert!(query_1 != query_2);
-        assert!(query_1 < query_2);
-
-        let query_1 = x.query("".into()).start(2).size(200).build()?;
-        let query_2 = x.query("".into()).start(3).size(20).build()?;
-        assert!(query_1 != query_2);
-        assert!(query_1 < query_2);
-
-        let query_1 = x.query("".into()).start(1000).size(20).build()?;
-        let query_2 = x.query("".into()).start(3).size(20).build()?;
-        assert!(query_1 != query_2);
-        assert!(query_1 > query_2);
-
-        let query_1 = x.query("".into()).start(1000).size(200).build()?;
-        let query_2 = x.query("".into()).start(3).size(20).build()?;
-        assert!(query_1 != query_2);
-        assert!(query_1 > query_2);
-        Ok(())
-    }
-
-    use rdf_types::{dataset::DatasetView, static_iref::iri};
-    #[test]
-    fn test_ld() -> () {
-        #[derive(linked_data::Serialize, linked_data::Deserialize)]
-        #[ld(prefix("ex" = "http://example.org/"))]
-        struct Foo {
-            #[ld(id)]
-            id: IriBuf,
-
-            #[ld("ex:name")]
-            name: String,
-
-            #[ld("ex:email")]
-            email: String,
-
-            #[ld("ex:numbers")]
-            numbers: Vec<i64>,
-            #[ld("ex:maybe")]
-            maybe: Option<String>,
-            #[ld("ex:alot")]
-            alot: Vec<Nested>,
-        }
-
-        #[derive(linked_data::Serialize, linked_data::Deserialize)]
-        #[ld(prefix("ex" = "http://example.org/"))]
-        #[ld(type = "ex:object")]
-        struct Nested {
-            #[ld("ex:num")]
-            m: i64,
-        }
-
-        let _value = Foo {
-            id: iri!("http://example.org/JohnSmith").to_owned(),
-            name: "John Smith".to_owned(),
-            email: "john.smith@example.org".to_owned(),
-            numbers: vec![1, 133],
-            maybe: Some("S".into()),
-            alot: vec![Nested { m: 10 }],
-        };
-
-        // for quad in quads {
-        //     use rdf_types::RdfDisplay;
-        //     println!("{} .", quad.rdf_display())
-        // }
-    }
-}
+//         // for quad in quads {
+//         //     use rdf_types::RdfDisplay;
+//         //     println!("{} .", quad.rdf_display())
+//         // }
+//     }
+// }

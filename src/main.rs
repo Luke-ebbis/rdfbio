@@ -47,8 +47,7 @@ enum Commands {
     },
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     env_logger::init();
     let cli = Cli::parse();
 
@@ -65,7 +64,7 @@ async fn main() {
             let start: i32 = start.try_into().expect("Start value too large for i32");
             let builder = binding.size(size).start(start);
             let query = builder.query(query).build().unwrap();
-            let results = query.search().await;
+            let results = query.search();
 
             let results = match results {
                 Ok(r) => r,
