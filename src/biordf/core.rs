@@ -122,7 +122,7 @@ pub mod searching {
     where
         T: Pageable,
     {
-        search: &'a T,
+        pub search: &'a T,
         size: SearchSize,
     }
 
@@ -163,7 +163,7 @@ pub mod searching {
         type Item = &'a Pager<'a, T>;
 
         fn next(&mut self) -> Option<Self::Item> {
-            if self.index >= 10 {
+            if self.index <= 10 {
                 self.index += 1;
                 Some(self.pages)
             } else {
@@ -193,7 +193,7 @@ pub mod searching {
     /// For API methods that have a known size, and collect up to a max of the total size
     pub trait Pageable {
         fn total_hits(&self) -> Result<i32, PagerError>;
-        fn search(
+        fn perform(
             &self,
             start: i32,
             size: i32,
@@ -213,12 +213,20 @@ pub mod searching {
                 .map_err(|arg0: SearchError| PagerError::Api(arg0.to_string()))
         }
 
-        fn search(
+        fn perform(
             &self,
             start: i32,
             size: i32,
         ) -> Result<OmicsDiResponse, PagerError> {
-            todo!()
+            let r = self
+                .clone()
+                .start(start)
+                .size(size)
+                .build()
+                .unwrap()
+                .search()
+                .map_err(|x: SearchError| PagerError::Api(x.to_string()))?;
+            Ok(r)
         }
     }
 }
@@ -247,9 +255,17 @@ mod tests {
         let x = r;
         let pager: Pager<SearchBuilder> =
             Pager::new(x, SearchSize::Amount(1005));
-        for page in pager.into_iter() {
-            let p = page;
-            dbg!("Page");
+        let mut page = pager.into_iter();
+        for p in page {
+            dbg!(p.search.build()?.start);
+            // match p {
+            //     Some(p) => {
+            //         dbg!(p.search.build()?.start);
+            //     }
+            //     None => {
+            //         println!("No pages found!");
+            //     }
+            // }
         }
 
         Ok(())
