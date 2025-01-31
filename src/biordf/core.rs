@@ -140,11 +140,24 @@ pub mod searching {
             }
         }
 
-        pub(crate) fn into_iter(&'a self) -> PagerIterator<'a, T> {
-            PagerIterator {
+        pub(crate) fn into_iter(
+            &'a self
+        ) -> Result<PagerIterator<'a, T>, PagerError> {
+            let target = match &self.size {
+                SearchSize::Amount(i) => i.clone(),
+                SearchSize::All => self.search.total_hits().unwrap(),
+            };
+            let step = self.search.max_size().unwrap();
+            if step <= target {
+                let step = target;
+            }
+            dbg!(step, target);
+            Ok(PagerIterator {
                 pages: self,
                 index: 0,
-            }
+                step_size: step,
+                end_index: target,
+            })
         }
     }
 
@@ -153,19 +166,31 @@ pub mod searching {
         T: Pageable,
     {
         pages: &'a Pager<'a, T>,
-        index: usize,
+        index: i32,
+        step_size: i32,
+        end_index: i32,
     }
 
     impl<'a, T> Iterator for PagerIterator<'a, T>
     where
-        T: Pageable,
+        T: Pageable + Clone,
     {
-        type Item = &'a Pager<'a, T>;
+        type Item = T; //&'a Pager<'a, T>;
+
+        fn max(self) -> Option<Self::Item>
+        where
+            Self: Sized,
+            Self::Item: Ord,
+        {
+            todo!();
+        }
 
         fn next(&mut self) -> Option<Self::Item> {
-            if self.index <= 10 {
-                self.index += 1;
-                Some(self.pages)
+            if self.index as i32 <= self.end_index {
+                self.index += self.step_size;
+                let new =
+                    self.pages.search.clone().set_start(self.index).clone();
+                Some(new)
             } else {
                 None
             }
@@ -193,6 +218,11 @@ pub mod searching {
     /// For API methods that have a known size, and collect up to a max of the total size
     pub trait Pageable {
         fn total_hits(&self) -> Result<i32, PagerError>;
+        fn set_start(
+            &self,
+            start: i32,
+        ) -> Self;
+        fn max_size(&self) -> Result<i32, PagerError>;
         fn perform(
             &self,
             start: i32,
@@ -228,6 +258,21 @@ pub mod searching {
                 .map_err(|x: SearchError| PagerError::Api(x.to_string()))?;
             Ok(r)
         }
+
+        fn max_size(&self) -> Result<i32, PagerError> {
+            let s = self
+                .build()
+                .map_err(|x| PagerError::BuildError(x.to_string()))?
+                .size;
+            Ok(s)
+        }
+
+        fn set_start(
+            &self,
+            start: i32,
+        ) -> Self {
+            self.to_owned().start(start).to_owned()
+        }
     }
 }
 
@@ -250,23 +295,31 @@ mod tests {
         let mut x = SearchBuilder::default();
         let q: String = "E-GEOD-5003".into();
         // This is invalid and should not be allowed.
-        let r = x.query(&q);
+        let r = x.query(&q).size(100);
         let out = r.total_hits()?;
         let x = r;
         let pager: Pager<SearchBuilder> =
-            Pager::new(x, SearchSize::Amount(1005));
-        let mut page = pager.into_iter();
+            Pager::new(x, SearchSize::Amount(500));
+        let mut page = pager.into_iter().unwrap();
         for p in page {
-            dbg!(p.search.build()?.start);
-            // match p {
-            //     Some(p) => {
-            //         dbg!(p.search.build()?.start);
-            //     }
-            //     None => {
-            //         println!("No pages found!");
-            //     }
-            // }
+            dbg!(p.build()?.start, p.build()?.size,);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_paging_max_size() -> Result<(), Box<dyn Error>> {
+        let size = 20;
+        let mut x = SearchBuilder::default();
+        let q: String = "E-GEOD-5003".into();
+        let query = x.query(&q).start(2).size(size);
+        assert!(query.max_size()? == size);
+
+        let mut x = SearchBuilder::default();
+        let q: String = "E-GEOD-5003".into();
+        let query = x.query(&q).start(2);
+        assert!(query.total_hits()? == 1);
 
         Ok(())
     }
