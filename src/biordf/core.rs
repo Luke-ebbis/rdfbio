@@ -151,10 +151,11 @@ pub mod searching {
             if step <= target {
                 let step = target;
             }
+            let start = self.search.get_start()?;
             dbg!(step, target);
             Ok(PagerIterator {
                 pages: self,
-                index: 0,
+                index: start,
                 step_size: step,
                 end_index: target,
             })
@@ -187,9 +188,16 @@ pub mod searching {
 
         fn next(&mut self) -> Option<Self::Item> {
             if self.index as i32 <= self.end_index {
+                let start = self.index;
                 self.index += self.step_size;
-                let new =
-                    self.pages.search.clone().set_start(self.index).clone();
+                let end = self.index + self.step_size;
+                dbg!(start, end, self.step_size);
+                let new = self
+                    .pages
+                    .search
+                    .clone()
+                    .set(start, end, self.step_size)
+                    .clone();
                 Some(new)
             } else {
                 None
@@ -217,10 +225,13 @@ pub mod searching {
     }
     /// For API methods that have a known size, and collect up to a max of the total size
     pub trait Pageable {
+        fn get_start(&self) -> Result<i32, PagerError>;
         fn total_hits(&self) -> Result<i32, PagerError>;
-        fn set_start(
-            &self,
+        fn set(
+            self,
             start: i32,
+            end: i32,
+            step: i32,
         ) -> Self;
         fn max_size(&self) -> Result<i32, PagerError>;
         fn perform(
@@ -238,6 +249,7 @@ pub mod searching {
             let search = self.build().map_err(|x: SearchBuilderError| {
                 PagerError::BuildError(x.to_string())
             })?;
+            dbg!("total");
             search
                 .total_hit()
                 .map_err(|arg0: SearchError| PagerError::Api(arg0.to_string()))
@@ -267,11 +279,22 @@ pub mod searching {
             Ok(s)
         }
 
-        fn set_start(
-            &self,
+        fn set(
+            self,
             start: i32,
+            end: i32,
+            step: i32,
         ) -> Self {
-            self.to_owned().start(start).to_owned()
+            dbg!(format!("setting {start} and {end} using {step}"));
+            self.to_owned().start(start).size(end).to_owned()
+        }
+
+        fn get_start(&self) -> Result<i32, PagerError> {
+            let v = self
+                .build()
+                .map_err(|x| PagerError::BuildError(x.to_string()))?
+                .start;
+            Ok(v)
         }
     }
 }
@@ -293,16 +316,18 @@ mod tests {
     // #[ignore = "paging not yet implementedn"]
     fn test_paging() -> Result<(), Box<dyn Error>> {
         let mut x = SearchBuilder::default();
-        let q: String = "E-GEOD-5003".into();
+        let q: String = "Fish".into();
         // This is invalid and should not be allowed.
-        let r = x.query(&q).size(100);
+        let r = x.query(&q).size(2).start(4);
         let out = r.total_hits()?;
         let x = r;
         let pager: Pager<SearchBuilder> =
-            Pager::new(x, SearchSize::Amount(500));
-        let mut page = pager.into_iter().unwrap();
+            Pager::new(x, SearchSize::Amount(10));
+        let page = pager.into_iter().unwrap();
         for p in page {
-            dbg!(p.build()?.start, p.build()?.size,);
+            let part = p.build()?;
+            dbg!(part.clone().start, part.clone().size);
+            let results = part.search()?;
         }
 
         Ok(())

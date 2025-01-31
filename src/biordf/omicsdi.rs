@@ -58,6 +58,7 @@ pub mod api {
 
             // Check if the error message contains "The start parameter (100) is bigger than or equal to the number of hits (94)."
             if let Some((start, hits)) = Self::extract_start_error(&message) {
+                dbg!(format!("extracting for {start} {hits}"));
                 return SearchError::InvalidStartValue(start, hits);
             }
 
@@ -216,7 +217,10 @@ pub mod api {
             match hits {
                 Err(SearchError::InvalidStartValue(_, end)) => Ok(end),
                 Ok(r) => Ok(r.count as i32),
-                Err(e) => Err(e),
+                Err(e) => {
+                    dbg!("total hit error");
+                    Err(e)
+                }
             }
         }
 
@@ -255,6 +259,7 @@ pub mod api {
         /// Search the OmicsDi database with a search string.
         ///
         pub fn search(self) -> Result<OmicsDiResponse, SearchError> {
+            dbg!(self);
             let accept_header = "application/json";
             let x = self.query;
             let start = self.start;
@@ -470,7 +475,10 @@ mod tests {
     #![allow(non_camel_case_types)]
     use std::error::Error;
 
-    use crate::biordf::omicsdi::api::{SearchBuilder, SearchError};
+    use crate::biordf::{
+        core::searching::Pageable,
+        omicsdi::api::{SearchBuilder, SearchError},
+    };
 
     /// Database connection check...
     #[test]
@@ -496,6 +504,21 @@ mod tests {
         let _ = x.query(&q).start(19).size(10005).build().unwrap();
     }
 
+    #[test]
+    /// For the mut, it alters all subsequent setters...
+    fn test_setters() -> Result<(), Box<dyn Error>> {
+        let mut binding = SearchBuilder::default();
+        let mut x = binding.start(1).size(10).query("s");
+        let x2 = x.start(30).size(100);
+        let test_start = x2.get_start()?;
+        let test_size = x2.build()?.size;
+        assert!(test_start == 30);
+        assert!(test_size == 100);
+        let other = x.get_start()?;
+        dbg!(other);
+        assert!(other == 30);
+        Ok(())
+    }
     #[should_panic]
     #[test]
     fn test_pre_search_validation_error_size() -> () {
