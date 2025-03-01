@@ -1,3 +1,143 @@
+/// identfiers endpoint
+///
+/// Here I write a method to crosslink new identifiers from OmicsDi ones. A identifier is
+/// in the form: `http://identifiers.org/<source>:<identifier>`.
+/// Identifiers has a sparql endpoint: http://sparql.api.identifiers.org/
+pub mod identifiers {
+    use core::{fmt, panic};
+
+    // TODObefore linking; check your work.
+    /// The databases that link between OmicsDI and identifiers.org
+    #[derive(Clone, Copy)]
+    pub enum Databases<'a> {
+        /// When the `source` = project. You remove keep the whole identifier.
+        BioProject(&'a str),
+        /// For the pride database, pride:035768.
+        Pride(&'a str),
+    }
+
+    use std::{error::Error, str::FromStr};
+
+    use reqwest::StatusCode;
+
+    use crate::biordf::omicsdi::api::SearchError;
+
+    impl Databases<'_> {
+        const URL: &'static str = "http://identifiers.org/";
+        fn new<'a>(
+            namespace: &'a str,
+            id: &'a str,
+        ) -> Databases<'a> {
+            match namespace {
+                "pride" => Databases::Pride(id),
+                "project" => Databases::BioProject(id),
+                _ => todo!(),
+            }
+        }
+
+        fn namespace(self) -> &'static str {
+            match self {
+                Databases::BioProject(id) => "bioproject",
+                Databases::Pride(id) => "pride",
+            }
+        }
+
+        fn to_identifier(&self) -> Result<String, SearchError> {
+            let db_string = self.namespace();
+            // let identifiers_check = check_identifier_namespace(&db_string)?;
+            let id = format!("{}{}", Self::URL, self.to_string());
+            check_identifier_resolving(&id)?;
+            Ok(id)
+        }
+    }
+
+    impl fmt::Display for Databases<'_> {
+        fn fmt(
+            &self,
+            f: &mut fmt::Formatter,
+        ) -> fmt::Result {
+            let out: &str = match &self {
+                Databases::BioProject(id) => &format!("bioproject:{}", id),
+                Databases::Pride(id) => &format!("pride:{}", id),
+            };
+
+            write!(f, "{}", out)
+        }
+    }
+
+    //TODO impl to string
+
+    fn check_identifier_namespace(
+        namespace: &str
+    ) -> Result<bool, SearchError> {
+        const REST_URL: &'static str =
+            "https://registry.api.identifiers.org/restApi/namespaces/search/findByPrefix";
+        let params = [(&"prefix", &"pride")];
+        let url = REST_URL;
+        let url = reqwest::Url::parse_with_params(url, params)
+            .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
+        let client = reqwest::blocking::Client::new();
+        let response = client.get(url).send().map_err(|_| {
+            SearchError::RequestFailed(
+                reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to send request".into(),
+            )
+        })?;
+
+        let status = response.status();
+        let text = response.text()?;
+
+        Ok(true)
+    }
+
+    fn check_identifier_resolving(x: &str) -> Result<(), SearchError> {
+        let url = x;
+        let url = reqwest::Url::parse(url)
+            .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
+        let client = reqwest::blocking::Client::new();
+        let response = client.get(url).send().map_err(|_| {
+            SearchError::RequestFailed(
+                reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to send request".into(),
+            )
+        })?;
+
+        let status = response.status();
+        if StatusCode::is_success(&status) {
+            Ok(())
+        } else {
+            Err(SearchError::RequestFailed(status, "Failed".to_owned()))
+        }
+    }
+
+    #[test]
+    fn test_identifiers_not_found() -> Result<(), Box<dyn Error>> {
+        let identifier = Databases::new("project", "PRJ558612");
+        let id = identifier.to_identifier();
+        match id {
+            Err(x) => assert_eq!(
+                x.to_string(),
+                SearchError::RequestFailed(
+                    StatusCode::from_u16(404)?,
+                    "Failed".into()
+                )
+                .to_string()
+            ),
+            Ok(_) => panic!("this test should fail"),
+        }
+
+        Ok(())
+    }
+    #[test]
+    fn test_identifiers() -> Result<(), Box<dyn Error>> {
+        let identifier = Databases::new("project", "PRJNA558612");
+        let string = identifier.to_identifier()?;
+        assert_eq!("http://identifiers.org/bioproject:PRJNA558612", string);
+
+        Ok(())
+    }
+}
+
 /// Dealing with the data from an endpoint.
 pub mod data {
     // TODO: here will be a method to request data from endpoints in various formats.
@@ -50,6 +190,7 @@ pub mod data {
                 let focus = dataset.clone().id;
                 match dataset.clone().organisms {
                     Some(data) => {
+                        // this part removes the empty taxon slots.
                         for organism in data {
                             let organism_quads: Vec<Quad<Id, IriBuf, Term>> =
                                 organism.to_quads()?;
@@ -74,7 +215,6 @@ pub mod data {
                         warn!("focus {focus} has no associated taxa data.")
                     }
                 }
-                // let organism_quads = dataset.organisms.to_quads()?;
                 for q in quad_data.iter() {
                     quads.push(q.to_owned());
                 }
@@ -143,16 +283,17 @@ pub mod searching {
         pub(crate) fn into_iter(
             &'a self
         ) -> Result<PagerIterator<'a, T>, PagerError> {
+            // Set the target size to the total amount of hits.
+            let maximum_hits = self.search.total_hits()?;
             let target = match &self.size {
                 SearchSize::Amount(i) => i.clone(),
-                SearchSize::All => self.search.total_hits().unwrap(),
+                SearchSize::All => maximum_hits,
             };
             let step = self.search.max_size().unwrap();
             if step <= target {
                 let step = target;
             }
             let start = self.search.get_start()?;
-            dbg!(step, target);
             Ok(PagerIterator {
                 pages: self,
                 index: start,
@@ -313,8 +454,9 @@ mod tests {
     use std::iter::IntoIterator;
 
     #[test]
-    // #[ignore = "paging not yet implementedn"]
+    /// In this test, we verify that paging works when there are enough results.
     fn test_paging() -> Result<(), Box<dyn Error>> {
+        // The into iter needs to check for total results also
         let mut x = SearchBuilder::default();
         let q: String = "Fish".into();
         // This is invalid and should not be allowed.

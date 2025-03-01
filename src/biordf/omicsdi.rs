@@ -15,7 +15,9 @@ pub mod api {
     use crate::biordf::omicsdi::data::OmicsDiResponse;
     use core::fmt;
     use derive_builder::Builder;
+    use std::str::FromStr;
 
+    use iref::IriBuf;
     use reqwest::{self};
     // use serde::ser::StdError;
     use std::error::Error;
@@ -248,8 +250,21 @@ pub mod api {
             if status.is_success() {
                 let json_text: String = text;
                 let _ = super::data::check_for_null_fields(&json_text);
-                let deserialized: OmicsDiResponse =
+                let mut deserialized: OmicsDiResponse =
                     serde_json::from_str(&json_text)?;
+                let mut sets: Vec<super::data::DataSet> = Vec::new();
+                for ds in deserialized.datasets.clone().unwrap().iter_mut() {
+                    ds.id = IriBuf::from_str(&format!(
+                        "https://www.omicsdi.org/dataset/{}/{}",
+                        ds.source,
+                        ds.id
+                            .strip_prefix("https://www.omicsdi.org/dataset/")
+                            .unwrap()
+                    ))
+                    .unwrap_or(ds.id.clone());
+                    sets.push(ds.clone());
+                }
+                deserialized.datasets = Some(sets);
                 return Ok(deserialized);
             }
 
@@ -303,7 +318,8 @@ pub mod data {
         Clone,
         Debug,
     )]
-    #[ld(prefix("ex" = "http://example.org/"))]
+    #[ld(prefix("id" = "http://example.com/unprocessed"))]
+    #[ld(prefix("ex" = "http://example.com/verbs/"))]
     #[ld(type = "ex:OmicDiDataSet")]
     pub struct DataSet {
         #[ld(id)]
@@ -342,7 +358,7 @@ pub mod data {
         pub extra_fields: HashMap<String, serde_json::Value>,
     }
 
-    // #[ld(prefix("ex" = "http://example.org/"))]
+    #[ld(prefix("ex" = "http://example.org/verbs/"))]
     // #[ld(type = "ex:OmicsDiOrganism")]
     #[derive(
         linked_data::Serialize,
@@ -410,13 +426,13 @@ pub mod data {
             None => Err(de::Error::custom("Count field is null")),
         }
     }
-    /// Making a uri
+    /// Making a uri for OmicsDB records
     fn string_to_uri<'de, D>(deserializer: D) -> Result<IriBuf, D::Error>
     where
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        let st = format!("http://example.org/{}", s);
+        let st = format!("https://www.omicsdi.org/dataset/{}", s);
         IriBuf::new(st).map_err(de::Error::custom)
     }
     /// Making a string
@@ -489,7 +505,7 @@ mod tests {
         let results = query.search()?;
         let first_identifier =
             results.clone().datasets.unwrap().pop().unwrap().id;
-        assert_eq!(first_identifier, "http://example.org/E-GEOD-5003");
+        assert_eq!(first_identifier, "https://www.omicsdi.org/dataset/biostudies-arrayexpress/E-GEOD-5003");
 
         let _ = x.query("fish".into()).facet_size(1000).build()?;
         Ok(())
