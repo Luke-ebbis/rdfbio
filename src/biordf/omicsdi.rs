@@ -213,7 +213,7 @@ pub mod api {
         pub const MAX_REQUEST_SIZE: i32 = SearchBuilder::MAX_REQUEST_SIZE;
 
         pub fn total_hit(&self) -> Result<i32, SearchError> {
-            let mut search = self.clone();
+            let mut search = *self;
             search.size = 1;
             let hits = search.search();
             match hits {
