@@ -16,18 +16,13 @@ pub mod identifiers {
         Pride(&'a str),
     }
 
-    
-
     use reqwest::StatusCode;
 
     use crate::biordf::omicsdi::api::SearchError;
 
     impl Databases<'_> {
         const URL: &'static str = "http://identifiers.org/";
-        fn new<'a>(
-            namespace: &'a str,
-            id: &'a str,
-        ) -> Databases<'a> {
+        fn new<'a>(namespace: &'a str, id: &'a str) -> Databases<'a> {
             match namespace {
                 "pride" => Databases::Pride(id),
                 "project" => Databases::BioProject(id),
@@ -52,10 +47,7 @@ pub mod identifiers {
     }
 
     impl fmt::Display for Databases<'_> {
-        fn fmt(
-            &self,
-            f: &mut fmt::Formatter,
-        ) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             let out: &str = match &self {
                 Databases::BioProject(id) => &format!("bioproject:{}", id),
                 Databases::Pride(id) => &format!("pride:{}", id),
@@ -66,10 +58,8 @@ pub mod identifiers {
     }
 
     //TODO impl to string
-
-    fn check_identifier_namespace(
-        namespace: &str
-    ) -> Result<bool, SearchError> {
+    use std::error::Error;
+    fn check_identifier_namespace(namespace: &str) -> Result<bool, SearchError> {
         const REST_URL: &str =
             "https://registry.api.identifiers.org/restApi/namespaces/search/findByPrefix";
         let params = [(&"prefix", &"pride")];
@@ -92,8 +82,8 @@ pub mod identifiers {
 
     fn check_identifier_resolving(x: &str) -> Result<(), SearchError> {
         let url = x;
-        let url = reqwest::Url::parse(url)
-            .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
+        let url =
+            reqwest::Url::parse(url).map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
         let client = reqwest::blocking::Client::new();
         let response = client.get(url).send().map_err(|_| {
             SearchError::RequestFailed(
@@ -117,11 +107,7 @@ pub mod identifiers {
         match id {
             Err(x) => assert_eq!(
                 x.to_string(),
-                SearchError::RequestFailed(
-                    StatusCode::from_u16(404)?,
-                    "Failed".into()
-                )
-                .to_string()
+                SearchError::RequestFailed(StatusCode::from_u16(404)?, "Failed".into()).to_string()
             ),
             Ok(_) => panic!("this test should fail"),
         }
@@ -160,20 +146,13 @@ pub mod data {
     /// Trait to serialise different kinds of datastructures to their RDF representations.
     pub trait ToRDF {
         /// Serialise a struct to quads.
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError>;
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError>;
     }
 
     impl ToRDF for DataSet {
         /// Serialise a Dataset to quads.
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
-            let quads = linked_data::to_quads(
-                rdf_types::generator::Blank::new(),
-                &self,
-            )?;
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+            let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &self)?;
             Ok(quads)
         }
     }
@@ -181,9 +160,7 @@ pub mod data {
     impl ToRDF for OmicsDiResponse {
         /// Serialise an omics Di response to quads.
         /// Ignore the empty taxa slots...
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
             let mut quads: Vec<Quad<Id, IriBuf, Term>> = Vec::new();
             for dataset in self.datasets.unwrap().iter() {
                 let quad_data = dataset.clone().to_quads()?;
@@ -195,13 +172,9 @@ pub mod data {
                             let organism_quads: Vec<Quad<Id, IriBuf, Term>> =
                                 organism.to_quads()?;
                             for mut org_quads in organism_quads {
-                                org_quads.0 =
-                                    rdf_types::Id::Iri(focus.clone());
+                                org_quads.0 = rdf_types::Id::Iri(focus.clone());
                                 match org_quads.2.clone() {
-                                    rdf_types::Term::Literal(Literal {
-                                        value: l,
-                                        type_: _,
-                                    }) => {
+                                    rdf_types::Term::Literal(Literal { value: l, type_: _ }) => {
                                         if !l.is_empty() {
                                             quads.push(org_quads.to_owned());
                                         }
@@ -225,13 +198,8 @@ pub mod data {
 
     impl ToRDF for Organism {
         /// Serialise an OmicsDi organism to quads.
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
-            let quads = linked_data::to_quads(
-                rdf_types::generator::Blank::new(),
-                &self,
-            )?;
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+            let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &self)?;
             Ok(quads)
         }
     }
@@ -241,7 +209,7 @@ pub mod searching {
 
     use crate::biordf::omicsdi::{
         api::{SearchBuilder, SearchBuilderError, SearchError},
-        data::{OmicsDiResponse},
+        data::OmicsDiResponse,
     };
 
     pub enum Endpoint<'a, T>
@@ -270,19 +238,14 @@ pub mod searching {
     where
         T: Pageable,
     {
-        pub fn new(
-            search: &'a T,
-            size: SearchSize,
-        ) -> Pager<T> {
+        pub fn new(search: &'a T, size: SearchSize) -> Pager<T> {
             Pager {
                 search: search,
                 size,
             }
         }
 
-        pub(crate) fn into_iter(
-            &'a self
-        ) -> Result<PagerIterator<'a, T>, PagerError> {
+        pub(crate) fn into_iter(&'a self) -> Result<PagerIterator<'a, T>, PagerError> {
             // Set the target size to the total amount of hits.
             let maximum_hits = self.search.total_hits()?;
             let target = match &self.size {
@@ -368,18 +331,9 @@ pub mod searching {
     pub trait Pageable {
         fn get_start(&self) -> Result<i32, PagerError>;
         fn total_hits(&self) -> Result<i32, PagerError>;
-        fn set(
-            self,
-            start: i32,
-            end: i32,
-            step: i32,
-        ) -> Self;
+        fn set(self, start: i32, end: i32, step: i32) -> Self;
         fn max_size(&self) -> Result<i32, PagerError>;
-        fn perform(
-            &self,
-            start: i32,
-            size: i32,
-        ) -> Result<OmicsDiResponse, PagerError>;
+        fn perform(&self, start: i32, size: i32) -> Result<OmicsDiResponse, PagerError>;
     }
 
     impl Pageable for SearchBuilder<'_> {
@@ -387,20 +341,16 @@ pub mod searching {
 
         /// Ask for the total amount of hits.
         fn total_hits(&self) -> Result<i32, PagerError> {
-            let search = self.build().map_err(|x: SearchBuilderError| {
-                PagerError::BuildError(x.to_string())
-            })?;
+            let search = self
+                .build()
+                .map_err(|x: SearchBuilderError| PagerError::BuildError(x.to_string()))?;
             dbg!("total");
             search
                 .total_hit()
                 .map_err(|arg0: SearchError| PagerError::Api(arg0.to_string()))
         }
 
-        fn perform(
-            &self,
-            start: i32,
-            size: i32,
-        ) -> Result<OmicsDiResponse, PagerError> {
+        fn perform(&self, start: i32, size: i32) -> Result<OmicsDiResponse, PagerError> {
             let r = self
                 .clone()
                 .start(start)
@@ -420,12 +370,7 @@ pub mod searching {
             Ok(s)
         }
 
-        fn set(
-            self,
-            start: i32,
-            end: i32,
-            step: i32,
-        ) -> Self {
+        fn set(self, start: i32, end: i32, step: i32) -> Self {
             dbg!(format!("setting {start} and {end} using {step}"));
             self.to_owned().start(start).size(end).to_owned()
         }
@@ -446,9 +391,7 @@ mod tests {
 
     use iref::IriBuf;
 
-    use crate::biordf::core::searching::{
-        Endpoint, Pageable, Pager, PagerIterator, SearchSize,
-    };
+    use crate::biordf::core::searching::{Endpoint, Pageable, Pager, PagerIterator, SearchSize};
 
     use crate::biordf::omicsdi::{api::SearchBuilder, data::OmicsDiResponse};
     use std::iter::IntoIterator;
@@ -463,8 +406,7 @@ mod tests {
         let r = x.query(&q).size(2).start(4);
         let out = r.total_hits()?;
         let x = r;
-        let pager: Pager<SearchBuilder> =
-            Pager::new(x, SearchSize::Amount(10));
+        let pager: Pager<SearchBuilder> = Pager::new(x, SearchSize::Amount(10));
         let page = pager.into_iter().unwrap();
         for p in page {
             let part = p.build()?;
