@@ -217,6 +217,8 @@ pub mod data {
 
 pub mod searching {
 
+    use std::clone;
+
     use crate::biordf::omicsdi::{
         api::{SearchBuilder, SearchBuilderError, SearchError},
         data::OmicsDiResponse,
@@ -344,7 +346,7 @@ pub mod searching {
         fn total_hits(&self) -> Result<i32, PagerError>;
         fn set(self, start: i32, end: i32, step: i32) -> Self;
         fn max_size(&self) -> Result<i32, PagerError>;
-        fn perform(&self, start: i32, size: i32) -> Result<OmicsDiResponse, PagerError>;
+        fn perform(&self) -> Result<OmicsDiResponse, PagerError>;
     }
 
     impl Pageable for SearchBuilder<'_> {
@@ -361,11 +363,11 @@ pub mod searching {
                 .map_err(|arg0: SearchError| PagerError::Api(arg0.to_string()))
         }
 
-        fn perform(&self, start: i32, size: i32) -> Result<OmicsDiResponse, PagerError> {
+        fn perform(&self) -> Result<OmicsDiResponse, PagerError> {
             let r = self
                 .clone()
-                .start(start)
-                .size(size)
+                .start(self.get_start()?)
+                .size(self.max_size()?)
                 .build()
                 .unwrap()
                 .search()
@@ -394,6 +396,17 @@ pub mod searching {
             Ok(v)
         }
     }
+
+    pub fn page(pager: Pager<SearchBuilder>) -> Result<OmicsDiResponse, PagerError> {
+        let mut first_search = pager.clone().search.perform()?;
+        let mut datasets: Vec<crate::biordf::omicsdi::data::DataSet> = Vec::new();
+        for p in pager.into_iter()? {
+            let partial = p.perform()?.datasets.unwrap();
+            datasets.extend(partial);
+        }
+        first_search.datasets.clone().unwrap().extend(datasets);
+        Ok(first_search)
+    }
 }
 
 #[cfg(test)]
@@ -406,6 +419,18 @@ mod tests {
 
     use crate::biordf::omicsdi::{api::SearchBuilder, data::OmicsDiResponse};
     use std::iter::IntoIterator;
+
+    #[test]
+    fn test_paging_api() -> Result<(), Box<dyn Error>> {
+        // The into iter needs to check for total results also
+        let mut x = SearchBuilder::default();
+        let q: String = "Fish".into();
+        let query_builder = x.query(&q).size(25);
+        let pager = Pager::new(query_builder, SearchSize::Amount(100));
+        let result = page(pager)?;
+        dbg!(result);
+        Ok(())
+    }
 
     #[test]
     /// In this test, we verify that paging works when there are enough results.
@@ -493,6 +518,8 @@ mod tests {
     }
 
     use rdf_types::{dataset::DatasetView, static_iref::iri};
+
+    use super::searching::page;
     #[test]
     fn test_ld() -> () {
         #[derive(linked_data::Serialize, linked_data::Deserialize)]
