@@ -18,7 +18,7 @@ pub mod identifiers {
         Pride(&'a str),
     }
 
-    use reqwest::StatusCode;
+    use reqwest::{Request, StatusCode};
 
     use crate::biordf::omicsdi::api::SearchError;
 
@@ -43,8 +43,14 @@ pub mod identifiers {
             let db_string = self.namespace();
             // let identifiers_check = check_identifier_namespace(&db_string)?;
             let id = format!("{}{}", Self::URL, self);
-            check_identifier_resolving(&id)?;
-            Ok(id)
+            let identifer_check = check_identifier_resolving(&id)?;
+            match identifer_check {
+                true => Ok(id),
+                false => Err(SearchError::RequestFailed(
+                    StatusCode::NOT_FOUND,
+                    "This identifier does not resolve!".to_owned(),
+                )),
+            }
         }
     }
 
@@ -59,7 +65,7 @@ pub mod identifiers {
         }
     }
 
-    //TODO impl to string
+    //todo impl to string
     use std::error::Error;
     fn check_identifier_namespace(namespace: &str) -> Result<bool, SearchError> {
         const REST_URL: &str =
@@ -82,7 +88,12 @@ pub mod identifiers {
         Ok(true)
     }
 
-    fn check_identifier_resolving(x: &str) -> Result<(), SearchError> {
+    /// Check if a url is able to resolve
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if there is an error with the search itself.
+    fn check_identifier_resolving(x: &str) -> Result<bool, SearchError> {
         let url = x;
         let url =
             reqwest::Url::parse(url).map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
@@ -95,10 +106,13 @@ pub mod identifiers {
         })?;
 
         let status = response.status();
-        if StatusCode::is_success(&status) {
-            Ok(())
-        } else {
-            Err(SearchError::RequestFailed(status, "Failed".to_owned()))
+        match status {
+            reqwest::StatusCode::OK => Ok(true),
+            reqwest::StatusCode::NOT_FOUND => Ok(false),
+            _ => Err(SearchError::RequestFailed(
+                status.clone(),
+                format!("Request failed {:?}", status.canonical_reason()),
+            )),
         }
     }
 
@@ -109,7 +123,11 @@ pub mod identifiers {
         match id {
             Err(x) => assert_eq!(
                 x.to_string(),
-                SearchError::RequestFailed(StatusCode::from_u16(404)?, "Failed".into()).to_string()
+                SearchError::RequestFailed(
+                    StatusCode::from_u16(404)?,
+                    "This identifier does not resolve!".to_owned()
+                )
+                .to_string()
             ),
             Ok(_) => panic!("this test should fail"),
         }
