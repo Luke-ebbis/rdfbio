@@ -24,9 +24,9 @@ pub mod api {
 
     #[derive(Debug)]
     pub enum SearchError {
-        InvalidStartValue(i32, i32), // the URL that failed
-        Other(String),               // (start, total hits)
-        JsonParseFailed(serde_json::Error), // Store the serde error here
+        InvalidStartValue(i32, i32),                // the URL that failed
+        Other(String),                              // (start, total hits)
+        JsonParseFailed(serde_json::Error),         // Store the serde error here
         RequestFailed(reqwest::StatusCode, String), // (status code, error message)
         UrlParseFailed(String),                     // Generic catch-all error
     }
@@ -49,11 +49,7 @@ pub mod api {
                             message = text.to_string();
                         }
                     }
-                    Err(_) => {
-                        return SearchError::Other(
-                            "Failed to parse XML response".into(),
-                        )
-                    }
+                    Err(_) => return SearchError::Other("Failed to parse XML response".into()),
                     _ => {}
                 }
             }
@@ -79,20 +75,13 @@ pub mod api {
     }
 
     impl fmt::Display for SearchError {
-        fn fmt(
-            &self,
-            f: &mut fmt::Formatter,
-        ) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
                 SearchError::InvalidStartValue(start, hits) => {
                     write!(f, "Invalid 'start' value {}. It must be less than the total number of hits ({}). Rerun with start of <={}. ", start, hits, hits-1)
                 }
                 SearchError::RequestFailed(status, message) => {
-                    write!(
-                        f,
-                        "Request failed with status code {}: {}",
-                        status, message
-                    )
+                    write!(f, "Request failed with status code {}: {}", status, message)
                 }
                 SearchError::UrlParseFailed(url) => {
                     write!(f, "Failed to parse URL: {}", url)
@@ -153,17 +142,7 @@ pub mod api {
     /// Search the OmicsDI rest database endpoint
     ///
     /// Documentation for the parameters is copied from there.
-    #[derive(
-        Builder,
-        std::marker::Copy,
-        Default,
-        Debug,
-        PartialEq,
-        Eq,
-        Ord,
-        PartialOrd,
-        Clone,
-    )]
+    #[derive(Builder, std::marker::Copy, Default, Debug, PartialEq, Eq, Ord, PartialOrd, Clone)]
     #[builder(build_fn(validate = "Self::validate"))]
     pub struct Search<'a> {
         // domain: Domain,
@@ -208,8 +187,7 @@ pub mod api {
     }
 
     impl Search<'_> {
-        const REST_URL: &'static str =
-            "https://www.omicsdi.org/ws/dataset/search";
+        const REST_URL: &'static str = "https://www.omicsdi.org/ws/dataset/search";
         pub const MAX_REQUEST_SIZE: i32 = SearchBuilder::MAX_REQUEST_SIZE;
 
         pub fn total_hit(&self) -> Result<i32, SearchError> {
@@ -234,15 +212,16 @@ pub mod api {
             let url = reqwest::Url::parse_with_params(url, params)
                 .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
             let client = reqwest::blocking::Client::new();
-            let response =
-                client.get(url).header("accept", header).send().map_err(
-                    |_| {
-                        SearchError::RequestFailed(
-                            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-                            "Failed to send request".into(),
-                        )
-                    },
-                )?;
+            let response = client
+                .get(url)
+                .header("accept", header)
+                .send()
+                .map_err(|_| {
+                    SearchError::RequestFailed(
+                        reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to send request".into(),
+                    )
+                })?;
 
             let status = response.status();
             let text = response.text()?;
@@ -250,8 +229,7 @@ pub mod api {
             if status.is_success() {
                 let json_text: String = text;
                 let _ = super::data::check_for_null_fields(&json_text);
-                let mut deserialized: OmicsDiResponse =
-                    serde_json::from_str(&json_text)?;
+                let mut deserialized: OmicsDiResponse = serde_json::from_str(&json_text)?;
                 let mut sets: Vec<super::data::DataSet> = Vec::new();
                 for ds in deserialized.datasets.clone().unwrap().iter_mut() {
                     ds.id = IriBuf::from_str(&format!(
@@ -281,8 +259,7 @@ pub mod api {
             let size = self.size;
             let start = start.to_string();
             let size = size.to_string();
-            let params =
-                vec![("query", x), ("start", &start), ("size", &size)];
+            let params = vec![("query", x), ("start", &start), ("size", &size)];
             let out = Self::request(params, accept_header)?;
             Ok(out)
         }
@@ -323,10 +300,7 @@ pub mod data {
     #[ld(type = "ex:OmicDiDataSet")]
     pub struct DataSet {
         #[ld(id)]
-        #[serde(
-            deserialize_with = "string_to_uri",
-            serialize_with = "uri_to_string"
-        )]
+        #[serde(deserialize_with = "string_to_uri", serialize_with = "uri_to_string")]
         pub id: IriBuf,
         #[ld("ex:source")]
         #[serde(deserialize_with = "null_check")]
@@ -361,12 +335,7 @@ pub mod data {
     #[ld(prefix("ex" = "http://example.org/verbs/"))]
     // #[ld(type = "ex:OmicsDiOrganism")]
     #[derive(
-        linked_data::Serialize,
-        linked_data::Deserialize,
-        Deserialize,
-        Serialize,
-        Debug,
-        Clone,
+        linked_data::Serialize, linked_data::Deserialize, Deserialize, Serialize, Debug, Clone,
     )]
     pub struct Organism {
         #[ld("ex:taxid")]
@@ -387,10 +356,7 @@ pub mod data {
     pub struct FacetValue {
         pub label: String,
         pub value: String,
-        #[serde(
-            deserialize_with = "string_to_u64",
-            serialize_with = "u64_to_string"
-        )]
+        #[serde(deserialize_with = "string_to_u64", serialize_with = "u64_to_string")]
         pub count: u64,
     }
 
@@ -406,10 +372,7 @@ pub mod data {
     }
 
     /// Custom serializer for converting a u64 to a string
-    fn u64_to_string<S>(
-        value: &u64,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+    fn u64_to_string<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -436,10 +399,7 @@ pub mod data {
         IriBuf::new(st).map_err(de::Error::custom)
     }
     /// Making a string
-    fn uri_to_string<S>(
-        value: &IriBuf,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+    fn uri_to_string<S>(value: &IriBuf, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -447,19 +407,16 @@ pub mod data {
     }
 
     pub fn check_for_null_fields(json: &str) -> Result<(), String> {
-        let value: Value =
-            serde_json::from_str(json).map_err(|e| e.to_string())?;
+        let value: Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
         check_for_null_fields_recursive(&value, "");
         Ok(())
     }
 
-    fn check_for_null_fields_recursive(
-        value: &Value,
-        parent_key: &str,
-    ) {
+    fn check_for_null_fields_recursive(value: &Value, parent_key: &str) {
         match value {
             Value::Null => {
-                log::warn!("Field '{}' is null", parent_key);
+                ()
+                // log::warn!("Field '{}' is null", parent_key);
             }
             Value::Object(map) => {
                 for (key, val) in map {
@@ -503,9 +460,11 @@ mod tests {
         let q: String = "E-GEOD-5003".into();
         let query = x.query(&q).build()?;
         let results = query.search()?;
-        let first_identifier =
-            results.clone().datasets.unwrap().pop().unwrap().id;
-        assert_eq!(first_identifier, "https://www.omicsdi.org/dataset/biostudies-arrayexpress/E-GEOD-5003");
+        let first_identifier = results.clone().datasets.unwrap().pop().unwrap().id;
+        assert_eq!(
+            first_identifier,
+            "https://www.omicsdi.org/dataset/biostudies-arrayexpress/E-GEOD-5003"
+        );
 
         let _ = x.query("fish".into()).facet_size(1000).build()?;
         Ok(())

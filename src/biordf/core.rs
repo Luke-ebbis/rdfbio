@@ -304,11 +304,11 @@ pub mod searching {
         }
 
         fn next(&mut self) -> Option<Self::Item> {
-            if self.index <= self.end_index {
+            self.step_size = self.step_size - 1;
+            if self.index < self.end_index {
                 let start = self.index;
                 self.index += self.step_size;
-                let end = self.index + self.step_size;
-                dbg!(start, end, self.step_size);
+                let end = start + self.step_size;
                 let new = self
                     .pages
                     .search
@@ -317,11 +317,13 @@ pub mod searching {
                     .clone();
                 Some(new)
             } else {
+                log::info!("Now we stop at a self index of {}", self.index);
                 None
             }
         }
     }
 
+    use log::info;
     use thiserror::Error;
     #[derive(Debug, Error)]
     pub enum PagerError {
@@ -364,6 +366,11 @@ pub mod searching {
         }
 
         fn perform(&self) -> Result<OmicsDiResponse, PagerError> {
+            info!(
+                "Searching - start = {} end is {}",
+                self.get_start()?,
+                self.max_size()?
+            );
             let r = self
                 .clone()
                 .start(self.get_start()?)
@@ -384,7 +391,7 @@ pub mod searching {
         }
 
         fn set(self, start: i32, end: i32, step: i32) -> Self {
-            dbg!(format!("setting {start} and {end} using {step}"));
+            info!("setting start {} and end {}", start, end);
             self.to_owned().start(start).size(end).to_owned()
         }
 
@@ -397,14 +404,22 @@ pub mod searching {
         }
     }
 
+    /// Page over a searchbuilder
     pub fn page(pager: Pager<SearchBuilder>) -> Result<OmicsDiResponse, PagerError> {
+        log::info!("Starting to page");
         let mut first_search = pager.clone().search.perform()?;
         let mut datasets: Vec<crate::biordf::omicsdi::data::DataSet> = Vec::new();
+        first_search.datasets = Some(datasets.clone());
         for p in pager.into_iter()? {
+            log::info!("start {} - end {}", p.get_start()?, p.max_size()?);
             let partial = p.perform()?.datasets.unwrap();
             datasets.extend(partial);
         }
-        first_search.datasets.clone().unwrap().extend(datasets);
+        first_search.datasets = Some(datasets);
+        log::info!(
+            "in total there are {} items found",
+            first_search.clone().datasets.unwrap().len()
+        );
         Ok(first_search)
     }
 }
@@ -423,6 +438,7 @@ mod tests {
     #[test]
     fn test_paging_api() -> Result<(), Box<dyn Error>> {
         // The into iter needs to check for total results also
+        env_logger::init();
         let mut x = SearchBuilder::default();
         let q: String = "Fish".into();
         let query_builder = x.query(&q).size(25);
