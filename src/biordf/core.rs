@@ -4,7 +4,7 @@
 /// in the form: `http://identifiers.org/<source>:<identifier>`.
 /// Identifiers has a sparql endpoint: http://sparql.api.identifiers.org/
 pub mod identifiers {
-    use core::fmt;
+    use core::{fmt, panic};
 
     // TODObefore linking; check your work.
     /// The databases that link between OmicsDI and identifiers.org
@@ -16,7 +16,7 @@ pub mod identifiers {
         Pride(&'a str),
     }
 
-    
+    use std::{error::Error, str::FromStr};
 
     use reqwest::StatusCode;
 
@@ -45,7 +45,7 @@ pub mod identifiers {
         fn to_identifier(&self) -> Result<String, SearchError> {
             let db_string = self.namespace();
             // let identifiers_check = check_identifier_namespace(&db_string)?;
-            let id = format!("{}{}", Self::URL, self);
+            let id = format!("{}{}", Self::URL, self.to_string());
             check_identifier_resolving(&id)?;
             Ok(id)
         }
@@ -70,7 +70,7 @@ pub mod identifiers {
     fn check_identifier_namespace(
         namespace: &str
     ) -> Result<bool, SearchError> {
-        const REST_URL: &str =
+        const REST_URL: &'static str =
             "https://registry.api.identifiers.org/restApi/namespaces/search/findByPrefix";
         let params = [(&"prefix", &"pride")];
         let url = REST_URL;
@@ -240,8 +240,8 @@ pub mod data {
 pub mod searching {
 
     use crate::biordf::omicsdi::{
-        api::{SearchBuilder, SearchBuilderError, SearchError},
-        data::{OmicsDiResponse},
+        api::{Search, SearchBuilder, SearchBuilderError, SearchError},
+        data::{self, OmicsDiResponse},
     };
 
     pub enum Endpoint<'a, T>
@@ -275,25 +275,26 @@ pub mod searching {
             size: SearchSize,
         ) -> Pager<T> {
             Pager {
-                search: search,
-                size,
+                search: &search,
+                size: size,
             }
         }
 
-        pub(crate) fn into_iter(
+        pub fn into_iter(
             &'a self
         ) -> Result<PagerIterator<'a, T>, PagerError> {
             // Set the target size to the total amount of hits.
             let maximum_hits = self.search.total_hits()?;
             let target = match &self.size {
-                SearchSize::Amount(i) => *i,
+                SearchSize::Amount(i) => i.clone(),
                 SearchSize::All => maximum_hits,
             };
             let step = self.search.max_size().unwrap();
-            if step <= target {
-                let step = target;
-            }
+            // if step <= target {
+            //     let step = target;
+            // }
             let start = self.search.get_start()?;
+            dbg!(target);
             Ok(PagerIterator {
                 pages: self,
                 index: start,
@@ -313,7 +314,7 @@ pub mod searching {
         end_index: i32,
     }
 
-    impl<T> Iterator for PagerIterator<'_, T>
+    impl<'a, T> Iterator for PagerIterator<'a, T>
     where
         T: Pageable + Clone,
     {
@@ -328,7 +329,7 @@ pub mod searching {
         }
 
         fn next(&mut self) -> Option<Self::Item> {
-            if self.index <= self.end_index {
+            if self.index as i32 <= self.end_index {
                 let start = self.index;
                 self.index += self.step_size;
                 let end = self.index + self.step_size;
