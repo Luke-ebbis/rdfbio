@@ -4,10 +4,12 @@
 /// in the form: `http://identifiers.org/<source>:<identifier>`.
 /// Identifiers has a sparql endpoint: http://sparql.api.identifiers.org/
 pub mod identifiers {
-    use core::{fmt, panic};
+    use core::fmt;
 
     // TODObefore linking; check your work.
     /// The databases that link between OmicsDI and identifiers.org
+    /// Right now the only check that is made is whether the produced identifier
+    /// is able to resolve to something.
     #[derive(Clone, Copy)]
     pub enum Databases<'a> {
         /// When the `source` = project. You remove keep the whole identifier.
@@ -16,22 +18,25 @@ pub mod identifiers {
         Pride(&'a str),
     }
 
-    use std::{error::Error, str::FromStr};
-
-    use reqwest::StatusCode;
+    use reqwest::{Request, StatusCode};
+    use std::error::Error;
 
     use crate::biordf::omicsdi::api::SearchError;
 
     impl Databases<'_> {
         const URL: &'static str = "http://identifiers.org/";
-        fn new<'a>(
-            namespace: &'a str,
-            id: &'a str,
-        ) -> Databases<'a> {
+        fn new<'a>(namespace: &'a str, id: &'a str) -> Databases<'a> {
             match namespace {
                 "pride" => Databases::Pride(id),
                 "project" => Databases::BioProject(id),
                 _ => todo!(),
+            }
+        }
+
+        fn get_id(self) -> String {
+            match self {
+                Self::BioProject(id) => id.to_owned(),
+                Self::Pride(id) => id.replace("PXD", ""),
             }
         }
 
@@ -45,17 +50,20 @@ pub mod identifiers {
         fn to_identifier(&self) -> Result<String, SearchError> {
             let db_string = self.namespace();
             // let identifiers_check = check_identifier_namespace(&db_string)?;
-            let id = format!("{}{}", Self::URL, self.to_string());
-            check_identifier_resolving(&id)?;
-            Ok(id)
+            let id = format!("{}{}:{}", Self::URL, self.namespace(), self.get_id());
+            let identifer_check = check_identifier_resolving(&id)?;
+            match identifer_check {
+                true => Ok(id),
+                false => Err(SearchError::RequestFailed(
+                    StatusCode::NOT_FOUND,
+                    format!("This identifier does not resolve! {id}"),
+                )),
+            }
         }
     }
 
     impl fmt::Display for Databases<'_> {
-        fn fmt(
-            &self,
-            f: &mut fmt::Formatter,
-        ) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             let out: &str = match &self {
                 Databases::BioProject(id) => &format!("bioproject:{}", id),
                 Databases::Pride(id) => &format!("pride:{}", id),
@@ -66,34 +74,14 @@ pub mod identifiers {
     }
 
     //TODO impl to string
-
-    fn check_identifier_namespace(
-        namespace: &str
-    ) -> Result<bool, SearchError> {
-        const REST_URL: &'static str =
-            "https://registry.api.identifiers.org/restApi/namespaces/search/findByPrefix";
-        let params = [(&"prefix", &"pride")];
-        let url = REST_URL;
-        let url = reqwest::Url::parse_with_params(url, params)
-            .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
-        let client = reqwest::blocking::Client::new();
-        let response = client.get(url).send().map_err(|_| {
-            SearchError::RequestFailed(
-                reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to send request".into(),
-            )
-        })?;
-
-        let status = response.status();
-        let text = response.text()?;
-
-        Ok(true)
-    }
-
-    fn check_identifier_resolving(x: &str) -> Result<(), SearchError> {
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if there is an error with the search itself.
+    fn check_identifier_resolving(x: &str) -> Result<bool, SearchError> {
         let url = x;
-        let url = reqwest::Url::parse(url)
-            .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
+        let url =
+            reqwest::Url::parse(url).map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
         let client = reqwest::blocking::Client::new();
         let response = client.get(url).send().map_err(|_| {
             SearchError::RequestFailed(
@@ -103,10 +91,13 @@ pub mod identifiers {
         })?;
 
         let status = response.status();
-        if StatusCode::is_success(&status) {
-            Ok(())
-        } else {
-            Err(SearchError::RequestFailed(status, "Failed".to_owned()))
+        match status {
+            reqwest::StatusCode::OK => Ok(true),
+            reqwest::StatusCode::NOT_FOUND => Ok(false),
+            _ => Err(SearchError::RequestFailed(
+                status.clone(),
+                format!("Request failed {:?}", status.canonical_reason()),
+            )),
         }
     }
 
@@ -119,7 +110,8 @@ pub mod identifiers {
                 x.to_string(),
                 SearchError::RequestFailed(
                     StatusCode::from_u16(404)?,
-                    "Failed".into()
+                    "This identifier does not resolve! http://identifiers.org/bioproject:PRJ558612"
+                        .to_owned()
                 )
                 .to_string()
             ),
@@ -131,6 +123,10 @@ pub mod identifiers {
     #[test]
     fn test_identifiers() -> Result<(), Box<dyn Error>> {
         let identifier = Databases::new("project", "PRJNA558612");
+        let string = identifier.to_identifier()?;
+        assert_eq!("http://identifiers.org/bioproject:PRJNA558612", string);
+
+        let identifier = Databases::new("pride", "PXD001416");
         let string = identifier.to_identifier()?;
         assert_eq!("http://identifiers.org/bioproject:PRJNA558612", string);
 
@@ -160,20 +156,13 @@ pub mod data {
     /// Trait to serialise different kinds of datastructures to their RDF representations.
     pub trait ToRDF {
         /// Serialise a struct to quads.
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError>;
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError>;
     }
 
     impl ToRDF for DataSet {
         /// Serialise a Dataset to quads.
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
-            let quads = linked_data::to_quads(
-                rdf_types::generator::Blank::new(),
-                &self,
-            )?;
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+            let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &self)?;
             Ok(quads)
         }
     }
@@ -181,9 +170,7 @@ pub mod data {
     impl ToRDF for OmicsDiResponse {
         /// Serialise an omics Di response to quads.
         /// Ignore the empty taxa slots...
-        fn to_quads(
-            self
-        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
             let mut quads: Vec<Quad<Id, IriBuf, Term>> = Vec::new();
             for dataset in self.datasets.unwrap().iter() {
                 let quad_data = dataset.clone().to_quads()?;
@@ -195,13 +182,9 @@ pub mod data {
                             let organism_quads: Vec<Quad<Id, IriBuf, Term>> =
                                 organism.to_quads()?;
                             for mut org_quads in organism_quads {
-                                org_quads.0 =
-                                    rdf_types::Id::Iri(focus.clone());
+                                org_quads.0 = rdf_types::Id::Iri(focus.clone());
                                 match org_quads.2.clone() {
-                                    rdf_types::Term::Literal(Literal {
-                                        value: l,
-                                        type_: _,
-                                    }) => {
+                                    rdf_types::Term::Literal(Literal { value: l, type_: _ }) => {
                                         if !l.is_empty() {
                                             quads.push(org_quads.to_owned());
                                         }
@@ -240,8 +223,8 @@ pub mod data {
 pub mod searching {
 
     use crate::biordf::omicsdi::{
-        api::{Search, SearchBuilder, SearchBuilderError, SearchError},
-        data::{self, OmicsDiResponse},
+        api::{SearchBuilder, SearchBuilderError, SearchError},
+        data::OmicsDiResponse,
     };
 
     pub enum Endpoint<'a, T>
@@ -275,26 +258,25 @@ pub mod searching {
             size: SearchSize,
         ) -> Pager<T> {
             Pager {
-                search: &search,
-                size: size,
+                search: search,
+                size,
             }
         }
 
-        pub fn into_iter(
+        pub(crate) fn into_iter(
             &'a self
         ) -> Result<PagerIterator<'a, T>, PagerError> {
             // Set the target size to the total amount of hits.
             let maximum_hits = self.search.total_hits()?;
             let target = match &self.size {
-                SearchSize::Amount(i) => i.clone(),
+                SearchSize::Amount(i) => *i,
                 SearchSize::All => maximum_hits,
             };
             let step = self.search.max_size().unwrap();
-            // if step <= target {
-            //     let step = target;
-            // }
+            if step <= target {
+                let step = target;
+            }
             let start = self.search.get_start()?;
-            dbg!(target);
             Ok(PagerIterator {
                 pages: self,
                 index: start,
@@ -314,7 +296,7 @@ pub mod searching {
         end_index: i32,
     }
 
-    impl<'a, T> Iterator for PagerIterator<'a, T>
+    impl<T> Iterator for PagerIterator<'_, T>
     where
         T: Pageable + Clone,
     {
@@ -329,7 +311,7 @@ pub mod searching {
         }
 
         fn next(&mut self) -> Option<Self::Item> {
-            if self.index as i32 <= self.end_index {
+            if self.index <= self.end_index {
                 let start = self.index;
                 self.index += self.step_size;
                 let end = self.index + self.step_size;
