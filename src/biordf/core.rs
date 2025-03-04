@@ -8,6 +8,8 @@ pub mod identifiers {
 
     // TODObefore linking; check your work.
     /// The databases that link between OmicsDI and identifiers.org
+    /// Right now the only check that is made is whether the produced identifier
+    /// is able to resolve to something.
     #[derive(Clone, Copy)]
     pub enum Databases<'a> {
         /// When the `source` = project. You remove keep the whole identifier.
