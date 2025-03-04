@@ -19,6 +19,7 @@ pub mod identifiers {
     }
 
     use reqwest::{Request, StatusCode};
+    use std::error::Error;
 
     use crate::biordf::omicsdi::api::SearchError;
 
@@ -32,6 +33,13 @@ pub mod identifiers {
             }
         }
 
+        fn get_id(self) -> String {
+            match self {
+                Self::BioProject(id) => id.to_owned(),
+                Self::Pride(id) => id.replace("PXD", ""),
+            }
+        }
+
         fn namespace(self) -> &'static str {
             match self {
                 Databases::BioProject(id) => "bioproject",
@@ -42,13 +50,13 @@ pub mod identifiers {
         fn to_identifier(&self) -> Result<String, SearchError> {
             let db_string = self.namespace();
             // let identifiers_check = check_identifier_namespace(&db_string)?;
-            let id = format!("{}{}", Self::URL, self);
+            let id = format!("{}{}:{}", Self::URL, self.namespace(), self.get_id());
             let identifer_check = check_identifier_resolving(&id)?;
             match identifer_check {
                 true => Ok(id),
                 false => Err(SearchError::RequestFailed(
                     StatusCode::NOT_FOUND,
-                    "This identifier does not resolve!".to_owned(),
+                    format!("This identifier does not resolve! {id}"),
                 )),
             }
         }
@@ -63,29 +71,6 @@ pub mod identifiers {
 
             write!(f, "{}", out)
         }
-    }
-
-    //todo impl to string
-    use std::error::Error;
-    fn check_identifier_namespace(namespace: &str) -> Result<bool, SearchError> {
-        const REST_URL: &str =
-            "https://registry.api.identifiers.org/restApi/namespaces/search/findByPrefix";
-        let params = [(&"prefix", &"pride")];
-        let url = REST_URL;
-        let url = reqwest::Url::parse_with_params(url, params)
-            .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
-        let client = reqwest::blocking::Client::new();
-        let response = client.get(url).send().map_err(|_| {
-            SearchError::RequestFailed(
-                reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to send request".into(),
-            )
-        })?;
-
-        let status = response.status();
-        let text = response.text()?;
-
-        Ok(true)
     }
 
     /// Check if a url is able to resolve
@@ -125,7 +110,8 @@ pub mod identifiers {
                 x.to_string(),
                 SearchError::RequestFailed(
                     StatusCode::from_u16(404)?,
-                    "This identifier does not resolve!".to_owned()
+                    "This identifier does not resolve! http://identifiers.org/bioproject:PRJ558612"
+                        .to_owned()
                 )
                 .to_string()
             ),
@@ -139,6 +125,10 @@ pub mod identifiers {
         let identifier = Databases::new("project", "PRJNA558612");
         let string = identifier.to_identifier()?;
         assert_eq!("http://identifiers.org/bioproject:PRJNA558612", string);
+
+        let identifier = Databases::new("pride", "PXD001416");
+        let string = identifier.to_identifier()?;
+        assert_eq!("http://identifiers.org/pride:001416", string);
 
         Ok(())
     }
