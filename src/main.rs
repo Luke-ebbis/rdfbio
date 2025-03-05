@@ -4,7 +4,7 @@ use std::any::Any;
 use clap::ValueEnum;
 use clap::{Parser, Subcommand};
 use rdf_types::dataset::BTreeDataset;
-use rdfbio::biordf::core::searching::{Pageable, Pager};
+use rdfbio::biordf::core::searching::{page, Pageable, Pager};
 use rdfbio::biordf::omicsdi::data::{self, DataSet, OmicsDiResponse};
 use rdfbio::biordf::{
     core::data::{dump_quads, ToRDF},
@@ -65,8 +65,7 @@ fn main() {
         } => {
             let mut binding = SearchBuilder::default();
             let size: i32 = size.try_into().expect("Size too large for i32");
-            let start: i32 =
-                start.try_into().expect("Start value too large for i32");
+            let start: i32 = start.try_into().expect("Start value too large for i32");
             let search_size = {
                 if size > 1000 {
                     1000 - 1
@@ -74,38 +73,20 @@ fn main() {
                     size
                 }
             };
+
             let mut builder = binding.clone();
-            let var_name = query.clone();
-            let query_builder =
-                binding.size(search_size).start(start).query(&var_name);
+            let user_query = query.clone();
+            let query_builder = binding.size(search_size).start(start).query(&user_query);
             let mut pager: Pager<SearchBuilder> = Pager::new(
                 query_builder,
                 rdfbio::biordf::core::searching::SearchSize::Amount(size),
             );
-
-            let mut out: OmicsDiResponse = builder
-                .query(&query)
-                .size(search_size)
-                .build()
-                .unwrap()
-                .search()
-                .unwrap();
-            let mut datasets: Vec<DataSet> = Vec::new();
-            for p in pager.into_iter().unwrap() {
-                let ds =
-                    p.build().unwrap().search().unwrap().datasets.unwrap();
-                for d in ds.into_iter() {
-                    datasets.push(d);
-                }
-            }
-            out.datasets = Some(datasets);
-            let results = out;
+            let results = page(pager).unwrap();
             match format {
                 OutputFormat::Ttl => {
                     let quads = results.to_quads().unwrap();
                     if let Some(file) = output {
-                        std::fs::write(file, dump_quads(quads.to_owned()))
-                            .unwrap();
+                        std::fs::write(file, dump_quads(quads.to_owned())).unwrap();
                     } else {
                         println!("{}", dump_quads(quads.to_owned()));
                     }
