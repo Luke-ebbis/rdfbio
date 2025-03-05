@@ -359,7 +359,6 @@ pub mod searching {
             let search = self
                 .build()
                 .map_err(|x: SearchBuilderError| PagerError::BuildError(x.to_string()))?;
-            dbg!("total");
             search
                 .total_hit()
                 .map_err(|arg0: SearchError| PagerError::Api(arg0.to_string()))
@@ -421,7 +420,6 @@ pub mod searching {
             "in total there are {} items found",
             first_search.clone().datasets.unwrap().len()
         );
-        dbg!(first_search.clone());
         Ok(first_search)
     }
 }
@@ -466,7 +464,6 @@ mod tests {
         let page = pager.into_iter().unwrap();
         for p in page {
             let part = p.build()?;
-            dbg!(part.clone().start, part.clone().size);
             let results = part.search()?;
         }
 

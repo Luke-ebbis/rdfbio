@@ -56,7 +56,6 @@ pub mod api {
 
             // Check if the error message contains "The start parameter (100) is bigger than or equal to the number of hits (94)."
             if let Some((start, hits)) = Self::extract_start_error(&message) {
-                dbg!(format!("extracting for {start} {hits}"));
                 return SearchError::InvalidStartValue(start, hits);
             }
 
@@ -197,10 +196,7 @@ pub mod api {
             match hits {
                 Err(SearchError::InvalidStartValue(_, end)) => Ok(end),
                 Ok(r) => Ok(r.count as i32),
-                Err(e) => {
-                    dbg!("total hit error");
-                    Err(e)
-                }
+                Err(e) => Err(e),
             }
         }
 
@@ -252,7 +248,6 @@ pub mod api {
         /// Search the OmicsDi database with a search string.
         ///
         pub fn search(self) -> Result<OmicsDiResponse, SearchError> {
-            dbg!(self);
             let accept_header = "application/json";
             let x = self.query;
             let start = self.start;
@@ -490,7 +485,6 @@ mod tests {
         assert!(test_start == 30);
         assert!(test_size == 100);
         let other = x.get_start()?;
-        dbg!(other);
         assert!(other == 30);
         Ok(())
     }
