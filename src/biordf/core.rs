@@ -304,7 +304,7 @@ pub mod searching {
         }
 
         fn next(&mut self) -> Option<Self::Item> {
-            self.step_size = self.step_size - 1;
+            self.step_size = self.step_size;
             if self.index < self.end_index {
                 let start = self.index;
                 self.index += self.step_size;
@@ -391,8 +391,8 @@ pub mod searching {
         }
 
         fn set(self, start: i32, end: i32, step: i32) -> Self {
-            info!("setting start {} and end {}", start, end);
-            self.to_owned().start(start).size(end).to_owned()
+            info!("setting start {} and step {}", start, step);
+            self.to_owned().start(start).size(step).to_owned()
         }
 
         fn get_start(&self) -> Result<i32, PagerError> {
@@ -415,11 +415,13 @@ pub mod searching {
             let partial = p.perform()?.datasets.unwrap();
             datasets.extend(partial);
         }
+        datasets.dedup_by_key(|x| x.id.to_string());
         first_search.datasets = Some(datasets);
         log::info!(
             "in total there are {} items found",
             first_search.clone().datasets.unwrap().len()
         );
+        dbg!(first_search.clone());
         Ok(first_search)
     }
 }
@@ -438,13 +440,15 @@ mod tests {
     #[test]
     fn test_paging_api() -> Result<(), Box<dyn Error>> {
         // The into iter needs to check for total results also
+
+        // This is with an even setup
         env_logger::init();
         let mut x = SearchBuilder::default();
         let q: String = "Fish".into();
         let query_builder = x.query(&q).size(25);
         let pager = Pager::new(query_builder, SearchSize::Amount(100));
         let result = page(pager)?;
-        dbg!(result);
+        assert_eq!(result.datasets.unwrap().len(), 100);
         Ok(())
     }
 
