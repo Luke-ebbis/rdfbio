@@ -24,11 +24,11 @@ pub mod api {
 
     #[derive(Debug)]
     pub enum SearchError {
-        InvalidStartValue(i32, i32),                // the URL that failed
-        Other(String),                              // (start, total hits)
-        JsonParseFailed(serde_json::Error),         // Store the serde error here
-        RequestFailed(reqwest::StatusCode, String), // (status code, error message)
-        UrlParseFailed(String),                     // Generic catch-all error
+        InvalidStartValue(i32, i32),                        // the URL that failed
+        Other(String),                                      // (start, total hits)
+        JsonParseFailed(serde_json::Error),                 // Store the serde error here
+        RequestFailed(reqwest::StatusCode, String, String), // (status code, error message, query)
+        UrlParseFailed(String),                             // Generic catch-all error
     }
     use quick_xml::events::Event;
     use quick_xml::Reader;
@@ -79,8 +79,12 @@ pub mod api {
                 SearchError::InvalidStartValue(start, hits) => {
                     write!(f, "Invalid 'start' value {}. It must be less than the total number of hits ({}). Rerun with start of <={}. ", start, hits, hits-1)
                 }
-                SearchError::RequestFailed(status, message) => {
-                    write!(f, "Request failed with status code {}: {}", status, message)
+                SearchError::RequestFailed(status, message, url_string) => {
+                    write!(
+                        f,
+                        "Request failed with status code {}: {} url was {}",
+                        status, message, url_string
+                    )
                 }
                 SearchError::UrlParseFailed(url) => {
                     write!(f, "Failed to parse URL: {}", url)
@@ -103,7 +107,8 @@ pub mod api {
             let status = err
                 .status()
                 .unwrap_or(reqwest::StatusCode::INTERNAL_SERVER_ERROR);
-            SearchError::RequestFailed(status, err.to_string())
+            let url = err.url().unwrap().to_string();
+            SearchError::RequestFailed(status, err.to_string(), url)
         }
     }
 
@@ -207,6 +212,7 @@ pub mod api {
             let url = Self::REST_URL;
             let url = reqwest::Url::parse_with_params(url, params)
                 .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
+            let url_string = url.clone().to_string();
             let client = reqwest::blocking::Client::new();
             let response = client
                 .get(url)
@@ -216,6 +222,7 @@ pub mod api {
                     SearchError::RequestFailed(
                         reqwest::StatusCode::INTERNAL_SERVER_ERROR,
                         "Failed to send request".into(),
+                        url_string.to_string(),
                     )
                 })?;
 

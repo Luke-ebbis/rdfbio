@@ -57,6 +57,7 @@ pub mod identifiers {
                 false => Err(SearchError::RequestFailed(
                     StatusCode::NOT_FOUND,
                     format!("This identifier does not resolve! {id}"),
+                    id,
                 )),
             }
         }
@@ -87,6 +88,7 @@ pub mod identifiers {
             SearchError::RequestFailed(
                 reqwest::StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to send request".into(),
+                x.to_string(),
             )
         })?;
 
@@ -97,6 +99,7 @@ pub mod identifiers {
             _ => Err(SearchError::RequestFailed(
                 status.clone(),
                 format!("Request failed {:?}", status.canonical_reason()),
+                x.to_string(),
             )),
         }
     }
@@ -111,7 +114,8 @@ pub mod identifiers {
                 SearchError::RequestFailed(
                     StatusCode::from_u16(404)?,
                     "This identifier does not resolve! http://identifiers.org/bioproject:PRJ558612"
-                        .to_owned()
+                        .to_owned(),
+                    "http://identifiers.org/bioproject:PRJ558612".to_string()
                 )
                 .to_string()
             ),
@@ -304,7 +308,6 @@ pub mod searching {
         }
 
         fn next(&mut self) -> Option<Self::Item> {
-            self.step_size = self.step_size;
             if self.index < self.end_index {
                 let start = self.index;
                 self.index += self.step_size;
@@ -366,7 +369,7 @@ pub mod searching {
 
         fn perform(&self) -> Result<OmicsDiResponse, PagerError> {
             info!(
-                "Searching - start = {} end is {}",
+                "searching - start = {} size = {}",
                 self.get_start()?,
                 self.max_size()?
             );
