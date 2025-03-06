@@ -308,7 +308,9 @@ pub mod searching {
         }
 
         fn next(&mut self) -> Option<Self::Item> {
-            if self.index < self.end_index {
+            // self.pages.size
+            info!("end is {}", self.end_index);
+            if self.index <= self.end_index {
                 let start = self.index;
                 self.index += self.step_size;
                 let end = start + self.step_size;
@@ -405,11 +407,11 @@ pub mod searching {
             Ok(v)
         }
     }
-
+    use rayon::prelude::*;
     /// Page over a searchbuilder
     pub fn page(pager: Pager<SearchBuilder>) -> Result<OmicsDiResponse, PagerError> {
         log::info!("Starting to page");
-        let mut first_search = pager.clone().search.perform()?;
+        let mut first_search = pager.clone().search.clone().set(0, 1, 1).perform()?;
         let mut datasets: Vec<crate::biordf::omicsdi::data::DataSet> = Vec::new();
         first_search.datasets = Some(datasets.clone());
         for p in pager.into_iter()? {

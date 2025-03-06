@@ -68,7 +68,7 @@ fn main() {
             let start: i32 = start.try_into().expect("Start value too large for i32");
             let search_size = {
                 if size > 1000 {
-                    1000 - 1
+                    1000
                 } else {
                     size
                 }
