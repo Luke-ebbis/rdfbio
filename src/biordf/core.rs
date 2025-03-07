@@ -307,20 +307,33 @@ pub mod searching {
             todo!();
         }
 
+        /// Construct the next Pageable
         fn next(&mut self) -> Option<Self::Item> {
             // self.pages.size
             info!("end is {}", self.end_index);
-            if self.index <= self.end_index {
-                let start = self.index;
-                self.index += self.step_size;
-                let end = start + self.step_size;
-                let new = self
-                    .pages
-                    .search
-                    .clone()
-                    .set(start, end, self.step_size)
-                    .clone();
-                Some(new)
+            if self.index < self.end_index {
+                // Case 1: we can make a whole stepsize
+                if self.index + self.step_size < self.end_index {
+                    let start = self.index;
+                    self.index += self.step_size;
+                    let end = start + self.step_size;
+                    let new = self
+                        .pages
+                        .search
+                        .clone()
+                        .set(start, end, self.step_size)
+                        .clone();
+                    Some(new)
+                } else {
+                    // Case 2: we need to make a partial step
+                    let stepsize = self.end_index - self.index;
+                    info!("Adjusting step to {}", stepsize);
+                    let start = self.index;
+                    self.index += stepsize;
+                    let end = start + stepsize;
+                    let new = self.pages.search.clone().set(start, end, stepsize).clone();
+                    Some(new)
+                }
             } else {
                 log::info!("Now we stop at a self index of {}", self.index);
                 None
@@ -452,6 +465,14 @@ mod tests {
         let pager = Pager::new(query_builder, SearchSize::Amount(100));
         let result = page(pager)?;
         assert_eq!(result.datasets.unwrap().len(), 100);
+
+        // This is with an uneven setup
+        let mut x = SearchBuilder::default();
+        let q: String = "Fish".into();
+        let query_builder = x.query(&q).size(25);
+        let pager = Pager::new(query_builder, SearchSize::Amount(105));
+        let result = page(pager)?;
+        assert_eq!(result.datasets.unwrap().len(), 105);
         Ok(())
     }
 
