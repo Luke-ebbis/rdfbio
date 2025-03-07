@@ -274,10 +274,12 @@ pub mod searching {
                 let step = target;
             }
             let start = self.search.get_start()?;
+            let total = self.search.total_hits()?;
             Ok(PagerIterator {
                 pages: self,
                 index: start,
                 step_size: step,
+                total_hits: total,
                 end_index: target,
             })
         }
@@ -290,6 +292,7 @@ pub mod searching {
         pages: &'a Pager<'a, T>,
         index: i32,
         step_size: i32,
+        total_hits: i32,
         end_index: i32,
     }
 
@@ -311,6 +314,11 @@ pub mod searching {
         fn next(&mut self) -> Option<Self::Item> {
             // self.pages.size
             info!("end is {}", self.end_index);
+            if self.index > self.total_hits {
+                info!("Bigger than the amount of hits");
+                return None;
+            }
+
             if self.index < self.end_index {
                 // Case 1: we can make a whole stepsize
                 if self.index + self.step_size < self.end_index {
@@ -473,6 +481,13 @@ mod tests {
         let pager = Pager::new(query_builder, SearchSize::Amount(105));
         let result = page(pager)?;
         assert_eq!(result.datasets.unwrap().len(), 105);
+
+        let mut x = SearchBuilder::default();
+        let q: String = "Fish".into();
+        let query_builder = x.query(&q).size(5);
+        let pager = Pager::new(query_builder, SearchSize::Amount(10));
+        let result = page(pager)?;
+        assert_eq!(result.datasets.unwrap().len(), 10);
         Ok(())
     }
 
@@ -493,6 +508,17 @@ mod tests {
             let results = part.search()?;
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_paging_small_results_size() -> Result<(), Box<dyn Error>> {
+        let mut x = SearchBuilder::default();
+        let q: String = "GSE291252".into();
+        let query_builder = x.query(&q).size(5);
+        let pager = Pager::new(query_builder, SearchSize::Amount(2000));
+        let result = page(pager)?;
+        assert_eq!(result.datasets.unwrap().len(), 1);
         Ok(())
     }
 
