@@ -13,12 +13,19 @@ pub mod api {
         NcbiTaxon,
     }
 
+    impl fmt::Display for Ontologies {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            let out: &str = match &self {
+                Ontologies::NcbiTaxon => "ncbitaxon",
+            };
+
+            write!(f, "{}", out)
+        }
+    }
+
     use crate::biordf::ols::data::OlsResponse;
-    use clap::builder;
     use core::fmt;
     use derive_builder::Builder;
-    use std::default;
-    use std::str::FromStr;
 
     use iref::IriBuf;
     use reqwest::{self};
@@ -165,8 +172,7 @@ pub mod api {
     }
 
     impl Search<'_> {
-        const REST_URL: &'static str =
-            "https://www.ebi.ac.uk/ols4/api/v2/ontologies/ncbitaxon/classes";
+        const REST_URL: &'static str = "https://www.ebi.ac.uk/ols4/api/v2/ontologies/";
         pub const MAX_REQUEST_SIZE: i32 = SearchBuilder::MAX_REQUEST_SIZE;
 
         pub fn total_hit(&self) -> Result<i32, SearchError> {
@@ -180,11 +186,15 @@ pub mod api {
             }
         }
 
-        fn request(params: Vec<(&str, &str)>, header: &str) -> Result<OlsResponse, SearchError> {
+        fn request(
+            params: Vec<(&str, &str)>,
+            header: &str,
+            ontology: Ontologies,
+        ) -> Result<OlsResponse, SearchError> {
             let url = Self::REST_URL;
             let url = reqwest::Url::parse_with_params(url, params)
                 .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
-            let url_string = url.clone().to_string();
+            let url_string = format!("{}/{}/classes", url, ontology);
             let client = reqwest::blocking::Client::new();
             let response = client
                 .get(url)
@@ -219,7 +229,7 @@ pub mod api {
             let size = self.size;
             let size = size.to_string();
             let params = vec![("query", x), ("size", &size)];
-            let out = Self::request(params, accept_header)?;
+            let out = Self::request(params, accept_header, self.ontology)?;
             Ok(out)
         }
     }

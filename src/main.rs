@@ -1,11 +1,6 @@
-use core::panic;
-use std::any::Any;
-
 use clap::ValueEnum;
 use clap::{Parser, Subcommand};
-use rdf_types::dataset::BTreeDataset;
-use rdfbio::biordf::core::searching::{page, Pageable, Pager};
-use rdfbio::biordf::omicsdi::data::{self, DataSet, OmicsDiResponse};
+use rdfbio::biordf::core::searching::{page, Pager};
 use rdfbio::biordf::{
     core::data::{dump_quads, ToRDF},
     omicsdi::api::SearchBuilder,
@@ -74,10 +69,9 @@ fn main() {
                 }
             };
 
-            let mut builder = binding.clone();
             let user_query = query.clone();
             let query_builder = binding.size(search_size).start(start).query(&user_query);
-            let mut pager: Pager<SearchBuilder> = Pager::new(
+            let pager: Pager<SearchBuilder> = Pager::new(
                 query_builder,
                 rdfbio::biordf::core::searching::SearchSize::Amount(size),
             );

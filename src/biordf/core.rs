@@ -18,8 +18,7 @@ pub mod identifiers {
         Pride(&'a str),
     }
 
-    use reqwest::{Request, StatusCode};
-    use std::error::Error;
+    use reqwest::StatusCode;
 
     use crate::biordf::omicsdi::api::SearchError;
 
@@ -97,7 +96,7 @@ pub mod identifiers {
             reqwest::StatusCode::OK => Ok(true),
             reqwest::StatusCode::NOT_FOUND => Ok(false),
             _ => Err(SearchError::RequestFailed(
-                status.clone(),
+                status,
                 format!("Request failed {:?}", status.canonical_reason()),
                 x.to_string(),
             )),
@@ -221,8 +220,6 @@ pub mod data {
 
 pub mod searching {
 
-    use std::clone;
-
     use crate::biordf::omicsdi::{
         api::{SearchBuilder, SearchBuilderError, SearchError},
         data::OmicsDiResponse,
@@ -249,16 +246,13 @@ pub mod searching {
         pub search: &'a T,
         size: SearchSize,
     }
-
+    #[allow(elided_named_lifetimes)]
     impl<'a, T> Pager<'a, T>
     where
         T: Pageable,
     {
         pub fn new(search: &'a T, size: SearchSize) -> Pager<T> {
-            Pager {
-                search: search,
-                size,
-            }
+            Pager { search, size }
         }
 
         // set this private pub(crate) again
@@ -378,8 +372,6 @@ pub mod searching {
     }
 
     impl Pageable for SearchBuilder<'_> {
-        /// Retrieve the max hits that can be retrieved in one go.
-
         /// Ask for the total amount of hits.
         fn total_hits(&self) -> Result<i32, PagerError> {
             let search = self
@@ -428,7 +420,6 @@ pub mod searching {
             Ok(v)
         }
     }
-    use rayon::prelude::*;
     /// Page over a searchbuilder
     pub fn page(pager: Pager<SearchBuilder>) -> Result<OmicsDiResponse, PagerError> {
         log::info!("Starting to page");

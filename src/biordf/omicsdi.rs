@@ -277,6 +277,7 @@ pub mod data {
     use std::collections::HashMap;
 
     use iref::IriBuf;
+    use linked_data;
     use serde::Serializer;
     /// The link to the dataset enpoint
     use serde::{Deserialize, Serialize};
@@ -417,7 +418,7 @@ pub mod data {
     fn check_for_null_fields_recursive(value: &Value, parent_key: &str) {
         match value {
             Value::Null => {
-                ()
+
                 // log::warn!("Field '{}' is null", parent_key);
             }
             Value::Object(map) => {
