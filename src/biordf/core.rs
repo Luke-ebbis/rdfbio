@@ -5,6 +5,7 @@
 /// Identifiers has a sparql endpoint: http://sparql.api.identifiers.org/
 pub mod identifiers {
     use core::fmt;
+    use std::error::Error;
 
     // TODObefore linking; check your work.
     /// The databases that link between OmicsDI and identifiers.org
