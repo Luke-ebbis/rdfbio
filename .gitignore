@@ -2,7 +2,7 @@
 # pixi environments
 .pixi
 *.egg-info
-
+results
 
 # Added by cargo
 
