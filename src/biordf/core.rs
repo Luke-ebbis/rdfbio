@@ -458,7 +458,6 @@ mod tests {
         // The into iter needs to check for total results also
 
         // This is with an even setup
-        env_logger::init();
         let mut x = SearchBuilder::default();
         let q: String = "Fish".into();
         let query_builder = x.query(&q).size(25);

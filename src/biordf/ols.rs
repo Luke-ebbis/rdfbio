@@ -23,11 +23,12 @@ pub mod api {
         }
     }
 
-    use crate::biordf::ols::data::OlsResponse;
+    use crate::biordf::ols::data::ApiResponse;
     use core::fmt;
     use derive_builder::Builder;
 
     use iref::IriBuf;
+    use log::info;
     use reqwest::{self};
     // use serde::ser::StdError;
     use std::error::Error;
@@ -42,6 +43,7 @@ pub mod api {
     }
     use quick_xml::events::Event;
     use quick_xml::Reader;
+
     impl SearchError {
         /// Parse an XML error response and map it to `SearchError`
         fn from_xml(xml: &str) -> Self {
@@ -190,21 +192,21 @@ pub mod api {
             params: Vec<(&str, &str)>,
             header: &str,
             ontology: Ontologies,
-        ) -> Result<OlsResponse, SearchError> {
-            let url = Self::REST_URL;
-            let url = reqwest::Url::parse_with_params(url, params)
+        ) -> Result<ApiResponse, SearchError> {
+            let url = format!("{}{}/classes", Self::REST_URL, ontology);
+            let url = reqwest::Url::parse_with_params(&url, params)
                 .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
-            let url_string = format!("{}/{}/classes", url, ontology);
+            info!("Sending query: {}", url);
             let client = reqwest::blocking::Client::new();
             let response = client
-                .get(url)
+                .get(url.clone())
                 .header("accept", header)
                 .send()
                 .map_err(|_| {
                     SearchError::RequestFailed(
                         reqwest::StatusCode::INTERNAL_SERVER_ERROR,
                         "Failed to send request".into(),
-                        url_string.to_string(),
+                        url.to_string(),
                     )
                 })?;
 
@@ -214,7 +216,7 @@ pub mod api {
             if status.is_success() {
                 let json_text: String = text;
                 let _ = super::data::check_for_null_fields(&json_text);
-                let deserialized: OlsResponse = serde_json::from_str(&json_text)?;
+                let deserialized: ApiResponse = serde_json::from_str(&json_text)?;
                 return Ok(deserialized);
             }
 
@@ -223,12 +225,12 @@ pub mod api {
         }
         /// Search the OmicsDi database with a search string.
         ///
-        pub fn search(self) -> Result<OlsResponse, SearchError> {
+        pub fn search(self) -> Result<ApiResponse, SearchError> {
             let accept_header = "application/json";
-            let x = self.query;
+            let x = self.query.to_string();
             let size = self.size;
             let size = size.to_string();
-            let params = vec![("query", x), ("size", &size)];
+            let params: Vec<(&str, &str)> = vec![("size", &size), ("search", &x.as_str())];
             let out = Self::request(params, accept_header, self.ontology)?;
             Ok(out)
         }
@@ -249,12 +251,35 @@ pub mod data {
     use serde::{Deserialize, Serialize};
 
     use serde::de::{self, Deserializer};
-    #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub struct OlsResponse {
-        pub numElements: u64,
-        // pub facets: Option<Vec<Facet>>,
+    #[derive(Debug, Deserialize)]
+    pub(crate) struct ApiResponse {
+        pub(crate) page: u32,
+        pub(crate) numElements: u32,
+        pub(crate) elements: Vec<Element>,
     }
 
+    #[derive(Debug, Deserialize)]
+    pub(crate) struct Element {
+        pub(crate) appearsIn: Vec<String>,
+        pub(crate) curie: String,
+        pub(crate) definedBy: Vec<String>,
+        pub(crate) directAncestor: Option<Vec<String>>,
+        pub(crate) directParent: Option<Vec<String>>,
+        pub(crate) hasDirectChildren: bool,
+        pub(crate) hasDirectParents: bool,
+        pub(crate) hasHierarchicalChildren: bool,
+        pub(crate) hasHierarchicalParents: bool,
+        pub(crate) hierarchicalAncestor: Option<Vec<String>>,
+        pub(crate) hierarchicalParent: Option<Vec<String>>,
+        pub(crate) hierarchicalProperty: Option<String>,
+        pub(crate) imported: bool,
+        pub(crate) iri: String,
+        pub(crate) isDefiningOntology: bool,
+        pub(crate) isObsolete: bool,
+        pub(crate) isPreferredRoot: bool,
+        pub(crate) label: Vec<String>,
+        pub(crate) linkedEntities: Option<serde_json::Value>,
+    }
     fn null_check<'de, D>(deserializer: D) -> Result<String, D::Error>
     where
         D: Deserializer<'de>,
@@ -334,5 +359,70 @@ pub mod data {
                 // log::info!("Field '{}' has a valid value: {:?}", parent_key, value);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+    use test_log::test;
+
+    use super::{api::SearchBuilder, data::ApiResponse};
+
+    fn test_ols_taxa_parse() {
+        let json_data = r#"
+            {
+                "page": 0,
+                "numElements": 1,
+                "totalPages": 1,
+                "totalElements": 1,
+                "elements": [
+                    {
+                        "appearsIn": ["ons", "ncbitaxon", "foodon"],
+                        "curie": "NCBITaxon:34772",
+                        "definedBy": ["ncbitaxon"],
+                        "directAncestor": ["http://purl.obolibrary.org/obo/NCBITaxon_55119"],
+                        "directParent": ["http://purl.obolibrary.org/obo/NCBITaxon_55119"],
+                        "hasDirectChildren": true,
+                        "hasDirectParents": true,
+                        "hasHierarchicalChildren": true,
+                        "hasHierarchicalParents": true,
+                        "hierarchicalAncestor": ["http://purl.obolibrary.org/obo/NCBITaxon_55119"],
+                        "hierarchicalParent": ["http://purl.obolibrary.org/obo/NCBITaxon_55119"],
+                        "hierarchicalProperty": "http://www.w3.org/2000/01/rdf-schema#subClassOf",
+                        "imported": false,
+                        "iri": "http://purl.obolibrary.org/obo/NCBITaxon_34772",
+                        "isDefiningOntology": true,
+                        "isObsolete": false,
+                        "isPreferredRoot": false,
+                        "label": ["Alosa"],
+                        "linkedEntities": {
+                            "http://purl.obolibrary.org/obo/NCBITaxon_131567": {
+                                "definedBy": ["ncbitaxon"],
+                                "label": ["cellular organisms"],
+                                "curie": "NCBITaxon:131567"
+                            }
+                        }
+                    }
+                ]
+            }
+            "#;
+
+        let parsed: ApiResponse = serde_json::from_str(json_data).expect("Failed to parse JSON");
+    }
+
+    #[test]
+    fn test_ols_ncbi() -> Result<(), Box<dyn Error>> {
+        let mut binding = SearchBuilder::default();
+        let ols_builder = binding.query("Bremia");
+        let result = ols_builder.build()?.search()?;
+        let element_1 = result.elements.get(0);
+        match element_1.clone() {
+            Some(e) => {
+                dbg!(&e.hierarchicalParent);
+            }
+            None => (),
+        }
+        Ok(())
     }
 }
