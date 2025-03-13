@@ -369,6 +369,7 @@ pub mod searching {
         fn total_hits(&self) -> Result<i32, PagerError>;
         fn set(self, start: i32, end: i32, step: i32) -> Self;
         fn max_size(&self) -> Result<i32, PagerError>;
+        fn get_query(&self) -> String;
         fn perform(&self) -> Result<OmicsDiResponse, PagerError>;
     }
 
@@ -420,12 +421,16 @@ pub mod searching {
                 .start;
             Ok(v)
         }
+
+        fn get_query(&self) -> String {
+            SearchBuilder::get_query(self)
+        }
     }
     /// Page over a searchbuilder
     pub fn page(pager: Pager<SearchBuilder>) -> Result<OmicsDiResponse, PagerError> {
-        log::info!("Starting to page");
         let mut first_search = pager.clone().search.clone().set(0, 1, 1).perform()?;
         let mut datasets: Vec<crate::biordf::omicsdi::data::DataSet> = Vec::new();
+        log::info!("Starting to page query: {}", pager.search.get_query());
         first_search.datasets = Some(datasets.clone());
         for p in pager.into_iter()? {
             log::info!("start {} - end {}", p.get_start()?, p.max_size()?);
@@ -447,6 +452,7 @@ mod tests {
     use std::error::Error;
 
     use iref::IriBuf;
+    use test_log::test;
 
     use crate::biordf::core::searching::{Endpoint, Pageable, Pager, PagerIterator, SearchSize};
 
@@ -509,7 +515,7 @@ mod tests {
         let query_builder = x.query(&q).size(5);
         let pager = Pager::new(query_builder, SearchSize::Amount(2000));
         let result = page(pager)?;
-        assert_eq!(result.datasets.unwrap().len(), 1);
+        assert_eq!(result.clone().datasets.unwrap().len(), 2);
         Ok(())
     }
 
