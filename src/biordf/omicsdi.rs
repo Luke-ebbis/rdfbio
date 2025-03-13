@@ -151,7 +151,7 @@ pub mod api {
     pub struct Search<'a> {
         // domain: Domain,
         /// General search term against multiple fields including, e.g: cancer human
-        query: &'a str,
+        pub(crate) query: &'a str,
         // /// Field to sort the output of the search results, e.g: id, publication_date
         #[builder(setter(into), default = "0")]
         // sort: Option<Field>,
@@ -187,6 +187,13 @@ pub mod api {
             let search_size = size;
             Self::validate_size(search_size)?;
             Ok(())
+        }
+
+        pub fn get_query(&self) -> String {
+            match self.query {
+                Some(q) => q.to_string(),
+                None => "".to_string(),
+            }
         }
     }
 

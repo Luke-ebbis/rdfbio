@@ -369,6 +369,7 @@ mod tests {
 
     use super::{api::SearchBuilder, data::ApiResponse};
 
+    #[test]
     fn test_ols_taxa_parse() {
         let json_data = r#"
             {
