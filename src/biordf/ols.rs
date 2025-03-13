@@ -13,6 +13,14 @@ pub mod api {
         NcbiTaxon,
     }
 
+    #[derive(Default, Clone, Copy, PartialEq, PartialOrd, Eq, Debug, Ord)]
+    pub enum Mode {
+        /// From id to synonyms
+        #[default]
+        Forward,
+        /// From synonym to identifiers
+        Backward,
+    }
     impl fmt::Display for Ontologies {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             let out: &str = match &self {
@@ -140,6 +148,8 @@ pub mod api {
 
         #[builder(default=Ontologies::NcbiTaxon)]
         pub(crate) ontology: Ontologies,
+        #[builder(default=Mode::Forward)]
+        pub(crate) mode: Mode,
         /// Size of the return, needs to be below 1000.
         #[builder(setter(into), default = "2")]
         pub(crate) size: i32,
@@ -230,9 +240,14 @@ pub mod api {
             let x = self.query.to_string();
             let size = self.size;
             let size = size.to_string();
-            let params: Vec<(&str, &str)> = vec![("size", &size), ("search", &x.as_str())];
-            let out = Self::request(params, accept_header, self.ontology)?;
-            Ok(out)
+            match self.mode {
+                Mode::Backward => {
+                    let params: Vec<(&str, &str)> = vec![("size", &size), ("search", &x.as_str())];
+                    let out = Self::request(params, accept_header, self.ontology)?;
+                    Ok(out)
+                }
+                Mode::Forward => todo!("Forward search not implemented"),
+            }
         }
     }
 }
@@ -415,7 +430,9 @@ mod tests {
     #[test]
     fn test_ols_ncbi() -> Result<(), Box<dyn Error>> {
         let mut binding = SearchBuilder::default();
-        let ols_builder = binding.query("Bremia");
+        let ols_builder = binding
+            .query("Bremia")
+            .mode(crate::biordf::ols::api::Mode::Backward);
         let result = ols_builder.build()?.search()?;
         let element_1 = result.elements.get(0);
         match element_1.clone() {

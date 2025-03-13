@@ -308,7 +308,7 @@ pub mod searching {
         /// Construct the next Pageable
         fn next(&mut self) -> Option<Self::Item> {
             // self.pages.size
-            info!("end is {}", self.end_index);
+            info!("size is {}", self.end_index);
             if self.index > self.total_hits {
                 info!("Bigger than the amount of hits");
                 return None;

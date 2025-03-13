@@ -290,7 +290,7 @@ pub mod data {
     use serde::{Deserialize, Serialize};
 
     use serde::de::{self, Deserializer};
-    #[derive(Deserialize, Serialize, Debug, Clone)]
+    #[derive(Deserialize, Serialize, Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
     pub struct OmicsDiResponse {
         pub count: u64,
         pub datasets: Option<Vec<DataSet>>,
@@ -304,6 +304,10 @@ pub mod data {
         linked_data::Deserialize,
         Clone,
         Debug,
+        Eq,
+        PartialEq,
+        PartialOrd,
+        Ord,
     )]
     #[ld(prefix("id" = "http://example.com/unprocessed"))]
     #[ld(prefix("ex" = "http://example.com/verbs/"))]
@@ -337,15 +341,24 @@ pub mod data {
         // pub omicsType: Option<Vec<String>>,
         // #[ld("ex:citations")]
         // pub citationsCount: Option<u64>,
-        #[ld(ignore)]
-        #[serde(flatten)]
-        pub extra_fields: HashMap<String, serde_json::Value>,
+        // #[ld(ignore)]
+        // #[serde(flatten)]
+        // pub extra_fields: HashMap<String, serde_json::Value>,
     }
 
     #[ld(prefix("ex" = "http://example.org/verbs/"))]
     // #[ld(type = "ex:OmicsDiOrganism")]
     #[derive(
-        linked_data::Serialize, linked_data::Deserialize, Deserialize, Serialize, Debug, Clone,
+        linked_data::Serialize,
+        linked_data::Deserialize,
+        Deserialize,
+        Serialize,
+        Debug,
+        Clone,
+        Eq,
+        PartialEq,
+        PartialOrd,
+        Ord,
     )]
     pub struct Organism {
         #[ld("ex:taxid")]

@@ -36,3 +36,9 @@ $ rdfbio query Cats -f ttl
 <http://example.org/GSE152946> <http://example.org/source> "geo" .
 <http://example.org/GSE152946> <http://example.org/title> "Developmental Genetics of Color Pattern Establishment in Cats" .
 ```
+
+## Data sources
+
+### OmicsDI
+
+The XML response (pages like [this](https://www.omicsdi.org/ws/dataset/eva/PRJEB30850.xml)) are parsed using serde.
