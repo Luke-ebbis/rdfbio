@@ -1,3 +1,26 @@
+pub mod remote {
+
+    use url::form_urlencoded;
+
+    fn double_encode(url: &str) -> String {
+        let encoded_once = form_urlencoded::byte_serialize(url.as_bytes())
+            .collect::<String>();
+        form_urlencoded::byte_serialize(encoded_once.as_bytes())
+            .collect::<String>()
+    }
+
+    #[test]
+    fn test_double_encode() {
+        let original_url = "http://www.ebi.ac.uk/efo/EFO_0003770";
+        let expected_encoded =
+            "http%253A%252F%252Fwww.ebi.ac.uk%252Fefo%252FEFO_0003770";
+
+        let result = double_encode(original_url);
+
+        assert_eq!(result, expected_encoded, "Double encoding failed");
+    }
+}
+
 /// identfiers endpoint
 ///
 /// Here I write a method to crosslink new identifiers from OmicsDi ones. A identifier is
@@ -25,7 +48,10 @@ pub mod identifiers {
 
     impl Databases<'_> {
         const URL: &'static str = "http://identifiers.org/";
-        fn new<'a>(namespace: &'a str, id: &'a str) -> Databases<'a> {
+        fn new<'a>(
+            namespace: &'a str,
+            id: &'a str,
+        ) -> Databases<'a> {
             match namespace {
                 "pride" => Databases::Pride(id),
                 "project" => Databases::BioProject(id),
@@ -50,7 +76,8 @@ pub mod identifiers {
         fn to_identifier(&self) -> Result<String, SearchError> {
             let db_string = self.namespace();
             // let identifiers_check = check_identifier_namespace(&db_string)?;
-            let id = format!("{}{}:{}", Self::URL, self.namespace(), self.get_id());
+            let id =
+                format!("{}{}:{}", Self::URL, self.namespace(), self.get_id());
             let identifer_check = check_identifier_resolving(&id)?;
             match identifer_check {
                 true => Ok(id),
@@ -64,7 +91,10 @@ pub mod identifiers {
     }
 
     impl fmt::Display for Databases<'_> {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt(
+            &self,
+            f: &mut fmt::Formatter,
+        ) -> fmt::Result {
             let out: &str = match &self {
                 Databases::BioProject(id) => &format!("bioproject:{}", id),
                 Databases::Pride(id) => &format!("pride:{}", id),
@@ -81,8 +111,8 @@ pub mod identifiers {
     /// This function will return an error if there is an error with the search itself.
     fn check_identifier_resolving(x: &str) -> Result<bool, SearchError> {
         let url = x;
-        let url =
-            reqwest::Url::parse(url).map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
+        let url = reqwest::Url::parse(url)
+            .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
         let client = reqwest::blocking::Client::new();
         let response = client.get(url).send().map_err(|_| {
             SearchError::RequestFailed(
@@ -160,13 +190,20 @@ pub mod data {
     /// Trait to serialise different kinds of datastructures to their RDF representations.
     pub trait ToRDF {
         /// Serialise a struct to quads.
-        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError>;
+        fn to_quads(
+            self
+        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError>;
     }
 
     impl ToRDF for DataSet {
         /// Serialise a Dataset to quads.
-        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
-            let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &self)?;
+        fn to_quads(
+            self
+        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+            let quads = linked_data::to_quads(
+                rdf_types::generator::Blank::new(),
+                &self,
+            )?;
             Ok(quads)
         }
     }
@@ -174,7 +211,9 @@ pub mod data {
     impl ToRDF for OmicsDiResponse {
         /// Serialise an omics Di response to quads.
         /// Ignore the empty taxa slots...
-        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+        fn to_quads(
+            self
+        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
             let mut quads: Vec<Quad<Id, IriBuf, Term>> = Vec::new();
             for dataset in self.datasets.unwrap().iter() {
                 let quad_data = dataset.clone().to_quads()?;
@@ -186,9 +225,13 @@ pub mod data {
                             let organism_quads: Vec<Quad<Id, IriBuf, Term>> =
                                 organism.to_quads()?;
                             for mut org_quads in organism_quads {
-                                org_quads.0 = rdf_types::Id::Iri(focus.clone());
+                                org_quads.0 =
+                                    rdf_types::Id::Iri(focus.clone());
                                 match org_quads.2.clone() {
-                                    rdf_types::Term::Literal(Literal { value: l, type_: _ }) => {
+                                    rdf_types::Term::Literal(Literal {
+                                        value: l,
+                                        type_: _,
+                                    }) => {
                                         if !l.is_empty() {
                                             quads.push(org_quads.to_owned());
                                         }
@@ -212,8 +255,13 @@ pub mod data {
 
     impl ToRDF for Organism {
         /// Serialise an OmicsDi organism to quads.
-        fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
-            let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &self)?;
+        fn to_quads(
+            self
+        ) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
+            let quads = linked_data::to_quads(
+                rdf_types::generator::Blank::new(),
+                &self,
+            )?;
             Ok(quads)
         }
     }
@@ -252,12 +300,17 @@ pub mod searching {
     where
         T: Pageable,
     {
-        pub fn new(search: &'a T, size: SearchSize) -> Pager<T> {
+        pub fn new(
+            search: &'a T,
+            size: SearchSize,
+        ) -> Pager<T> {
             Pager { search, size }
         }
 
         // set this private pub(crate) again
-        pub fn into_iter(&'a self) -> Result<PagerIterator<'a, T>, PagerError> {
+        pub fn into_iter(
+            &'a self
+        ) -> Result<PagerIterator<'a, T>, PagerError> {
             // Set the target size to the total amount of hits.
             let maximum_hits = self.search.total_hits()?;
             let target = match &self.size {
@@ -334,7 +387,12 @@ pub mod searching {
                     let start = self.index;
                     self.index += stepsize;
                     let end = start + stepsize;
-                    let new = self.pages.search.clone().set(start, end, stepsize).clone();
+                    let new = self
+                        .pages
+                        .search
+                        .clone()
+                        .set(start, end, stepsize)
+                        .clone();
                     Some(new)
                 }
             } else {
@@ -367,7 +425,12 @@ pub mod searching {
     pub trait Pageable {
         fn get_start(&self) -> Result<i32, PagerError>;
         fn total_hits(&self) -> Result<i32, PagerError>;
-        fn set(self, start: i32, end: i32, step: i32) -> Self;
+        fn set(
+            self,
+            start: i32,
+            end: i32,
+            step: i32,
+        ) -> Self;
         fn max_size(&self) -> Result<i32, PagerError>;
         fn get_query(&self) -> String;
         fn perform(&self) -> Result<OmicsDiResponse, PagerError>;
@@ -376,9 +439,9 @@ pub mod searching {
     impl Pageable for SearchBuilder<'_> {
         /// Ask for the total amount of hits.
         fn total_hits(&self) -> Result<i32, PagerError> {
-            let search = self
-                .build()
-                .map_err(|x: SearchBuilderError| PagerError::BuildError(x.to_string()))?;
+            let search = self.build().map_err(|x: SearchBuilderError| {
+                PagerError::BuildError(x.to_string())
+            })?;
             search
                 .total_hit()
                 .map_err(|arg0: SearchError| PagerError::Api(arg0.to_string()))
@@ -409,7 +472,12 @@ pub mod searching {
             Ok(s)
         }
 
-        fn set(self, start: i32, end: i32, step: i32) -> Self {
+        fn set(
+            self,
+            start: i32,
+            end: i32,
+            step: i32,
+        ) -> Self {
             info!("setting start {} and step {}", start, step);
             self.to_owned().start(start).size(step).to_owned()
         }
@@ -427,9 +495,13 @@ pub mod searching {
         }
     }
     /// Page over a searchbuilder
-    pub fn page(pager: Pager<SearchBuilder>) -> Result<OmicsDiResponse, PagerError> {
-        let mut first_search = pager.clone().search.clone().set(0, 1, 1).perform()?;
-        let mut datasets: Vec<crate::biordf::omicsdi::data::DataSet> = Vec::new();
+    pub fn page(
+        pager: Pager<SearchBuilder>
+    ) -> Result<OmicsDiResponse, PagerError> {
+        let mut first_search =
+            pager.clone().search.clone().set(0, 1, 1).perform()?;
+        let mut datasets: Vec<crate::biordf::omicsdi::data::DataSet> =
+            Vec::new();
         log::info!("Starting to page query: {}", pager.search.get_query());
         first_search.datasets = Some(datasets.clone());
         for p in pager.into_iter()? {
@@ -454,7 +526,9 @@ mod tests {
     use iref::IriBuf;
     use test_log::test;
 
-    use crate::biordf::core::searching::{Endpoint, Pageable, Pager, PagerIterator, SearchSize};
+    use crate::biordf::core::searching::{
+        Endpoint, Pageable, Pager, PagerIterator, SearchSize,
+    };
 
     use crate::biordf::omicsdi::{api::SearchBuilder, data::OmicsDiResponse};
     use std::iter::IntoIterator;
@@ -498,7 +572,8 @@ mod tests {
         let r = x.query(&q).size(2).start(4);
         let out = r.total_hits()?;
         let x = r;
-        let pager: Pager<SearchBuilder> = Pager::new(x, SearchSize::Amount(10));
+        let pager: Pager<SearchBuilder> =
+            Pager::new(x, SearchSize::Amount(10));
         let page = pager.into_iter().unwrap();
         for p in page {
             let part = p.build()?;
