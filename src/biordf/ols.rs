@@ -22,10 +22,7 @@ pub mod api {
         Backward,
     }
     impl fmt::Display for Ontologies {
-        fn fmt(
-            &self,
-            f: &mut fmt::Formatter,
-        ) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             let out: &str = match &self {
                 Ontologies::NcbiTaxon => "ncbitaxon",
             };
@@ -46,11 +43,11 @@ pub mod api {
 
     #[derive(Debug)]
     pub enum SearchError {
-        InvalidStartValue(i32, i32), // the URL that failed
-        Other(String),               // (start, total hits)
-        JsonParseFailed(serde_json::Error), // Store the serde error here
+        InvalidStartValue(i32, i32),                        // the URL that failed
+        Other(String),                                      // (start, total hits)
+        JsonParseFailed(serde_json::Error),                 // Store the serde error here
         RequestFailed(reqwest::StatusCode, String, String), // (status code, error message, query)
-        UrlParseFailed(String), // Generic catch-all error
+        UrlParseFailed(String),                             // Generic catch-all error
     }
     use quick_xml::events::Event;
     use quick_xml::Reader;
@@ -72,11 +69,7 @@ pub mod api {
                             message = text.to_string();
                         }
                     }
-                    Err(_) => {
-                        return SearchError::Other(
-                            "Failed to parse XML response".into(),
-                        )
-                    }
+                    Err(_) => return SearchError::Other("Failed to parse XML response".into()),
                     _ => {}
                 }
             }
@@ -86,10 +79,7 @@ pub mod api {
     }
 
     impl fmt::Display for SearchError {
-        fn fmt(
-            &self,
-            f: &mut fmt::Formatter,
-        ) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
                 SearchError::InvalidStartValue(start, hits) => {
                     write!(f, "Invalid 'start' value {}. It must be less than the total number of hits ({}). Rerun with start of <={}. ", start, hits, hits-1)
@@ -149,17 +139,7 @@ pub mod api {
     /// Search the OmicsDI rest database endpoint
     ///
     /// Documentation for the parameters is copied from there.
-    #[derive(
-        Builder,
-        std::marker::Copy,
-        Default,
-        Debug,
-        PartialEq,
-        Eq,
-        Ord,
-        PartialOrd,
-        Clone,
-    )]
+    #[derive(Builder, std::marker::Copy, Default, Debug, PartialEq, Eq, Ord, PartialOrd, Clone)]
     #[builder(build_fn(validate = "Self::validate"))]
     pub struct Search<'a> {
         // domain: Domain,
@@ -204,8 +184,7 @@ pub mod api {
     }
 
     impl Search<'_> {
-        const REST_URL: &'static str =
-            "https://www.ebi.ac.uk/ols4/api/v2/ontologies/";
+        const REST_URL: &'static str = "https://www.ebi.ac.uk/ols4/api/v2/ontologies/";
         pub const MAX_REQUEST_SIZE: i32 = SearchBuilder::MAX_REQUEST_SIZE;
 
         pub fn total_hit(&self) -> Result<i32, SearchError> {
@@ -247,8 +226,7 @@ pub mod api {
             if status.is_success() {
                 let json_text: String = text;
                 let _ = super::data::check_for_null_fields(&json_text);
-                let deserialized: ApiResponse =
-                    serde_json::from_str(&json_text)?;
+                let deserialized: ApiResponse = serde_json::from_str(&json_text)?;
                 return Ok(deserialized);
             }
 
@@ -264,10 +242,8 @@ pub mod api {
             let size = size.to_string();
             match self.mode {
                 Mode::Backward => {
-                    let params: Vec<(&str, &str)> =
-                        vec![("size", &size), ("search", &x.as_str())];
-                    let out =
-                        Self::request(params, accept_header, self.ontology)?;
+                    let params: Vec<(&str, &str)> = vec![("size", &size), ("search", &x.as_str())];
+                    let out = Self::request(params, accept_header, self.ontology)?;
                     Ok(out)
                 }
 
@@ -325,8 +301,7 @@ pub mod data {
         pub(crate) label: Vec<String>,
         pub(crate) linkedEntities: Option<serde_json::Value>,
 
-        pub(crate) additional_fields:
-            Option<HashMap<String, serde_json::Value>>,
+        pub(crate) additional_fields: Option<HashMap<String, serde_json::Value>>,
     }
 
     pub struct LinkedEntity {
@@ -349,9 +324,7 @@ pub mod data {
 
     #[derive(Debug, Serialize, Deserialize)]
     pub struct SynonymAxiom {
-        #[serde(
-            rename = "http://www.geneontology.org/formats/oboInOwl#hasSynonymType"
-        )]
+        #[serde(rename = "http://www.geneontology.org/formats/oboInOwl#hasSynonymType")]
         pub has_synonym_type: String,
         pub oboSynonymTypeName: String,
     }
@@ -368,10 +341,7 @@ pub mod data {
     }
 
     /// Custom serializer for converting a u64 to a string
-    fn u64_to_string<S>(
-        value: &u64,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+    fn u64_to_string<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -398,10 +368,7 @@ pub mod data {
         IriBuf::new(st).map_err(de::Error::custom)
     }
     /// Making a string
-    fn uri_to_string<S>(
-        value: &IriBuf,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+    fn uri_to_string<S>(value: &IriBuf, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -409,16 +376,12 @@ pub mod data {
     }
 
     pub fn check_for_null_fields(json: &str) -> Result<(), String> {
-        let value: Value =
-            serde_json::from_str(json).map_err(|e| e.to_string())?;
+        let value: Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
         check_for_null_fields_recursive(&value, "");
         Ok(())
     }
 
-    fn check_for_null_fields_recursive(
-        value: &Value,
-        parent_key: &str,
-    ) {
+    fn check_for_null_fields_recursive(value: &Value, parent_key: &str) {
         match value {
             Value::Null => {
                 ()
@@ -495,8 +458,7 @@ mod tests {
             }
             "#;
 
-        let parsed: ApiResponse =
-            serde_json::from_str(json_data).expect("Failed to parse JSON");
+        let parsed: ApiResponse = serde_json::from_str(json_data).expect("Failed to parse JSON");
     }
 
     #[test]
