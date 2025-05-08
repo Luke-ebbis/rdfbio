@@ -1,17 +1,23 @@
 use clap::ValueEnum;
 use clap::{Parser, Subcommand};
+use csv::Writer as CsvWriter;
+use csv::WriterBuilder as CsvWriterBuilder;
 use rdfbio::biordf;
 use rdfbio::biordf::core::searching::{page, Pager};
 use rdfbio::biordf::{
-    api::omicsdi::api::SearchBuilder as OmicsDIsearchBuilder,
     api::ols::api::SearchBuilder as OlssearchBuilder,
+    api::omicsdi::api::SearchBuilder as OmicsDIsearchBuilder,
     core::data::{dump_quads, ToRDF},
 };
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::io;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 enum OutputFormat {
     Ttl,
     Json,
+    Csv,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
@@ -57,15 +63,13 @@ enum Commands {
     },
 }
 
-fn query_command_ols(
-    query: String,
-    format: OutputFormat,
-    output: Option<String>,
-) {
+fn query_command_ols(query: String, format: OutputFormat, output: Option<String>) {
     let mut binding = OlssearchBuilder::default();
 
     let user_query = query.clone();
-    let query_builder = binding.query(&user_query).mode(biordf::api::ols::api::Mode::Backward);
+    let query_builder = binding
+        .query(&user_query)
+        .mode(biordf::api::ols::api::Mode::Backward);
     let results = query_builder.build().unwrap().search().unwrap();
 
     match format {
@@ -84,6 +88,19 @@ fn query_command_ols(
                 std::fs::write(file, json).unwrap();
             } else {
                 println!("{}", json);
+            }
+        }
+        OutputFormat::Csv => {
+            if let Some(file) = output {
+                let mut w = CsvWriter::from_writer(io::BufWriter::new(
+                    File::open(file).expect("Cannot open file!"),
+                ));
+                w.serialize(&results);
+                w.flush().unwrap();
+            } else {
+                let mut w = CsvWriter::from_writer(io::stdout());
+                w.serialize(&results);
+                w.flush().unwrap();
             }
         }
     }
@@ -130,6 +147,52 @@ fn query_command_omicsdi(
                 println!("{}", json);
             }
         }
+        OutputFormat::Csv => {
+            if let Some(file) = output {
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .open(file).expect("File cannot open");
+                let mut wtr = csv::WriterBuilder::new()
+                    .from_writer(file);
+                wtr.write_record(&["id",
+                                   "title",
+                                   "description",
+                                   "organisms"]).unwrap();
+                for record in results.datasets.unwrap() {
+                    let organisms = match &record.organisms {
+                        Some(vec) => vec.iter().map(|o| o.name.clone()).collect::<Vec<_>>().join(":"),
+                        None => String::new(),
+                    };
+
+                    wtr.write_record(&[
+                        &record.id.to_string(),
+                        &record.title.unwrap_or_default(),
+                        &record.description.unwrap_or_default(),
+                        &organisms,
+                    ]).unwrap();
+                }
+                wtr.flush().unwrap();
+            } else {
+                let mut wtr = csv::WriterBuilder::new()
+                    .from_writer(io::stdout());
+                for record in results.datasets.unwrap() {
+                    let organisms = match &record.organisms {
+                        Some(vec) => vec.iter().map(|o| o.name.clone()).collect::<Vec<_>>().join(":"),
+                        None => String::new(),
+                    };
+
+                    wtr.write_record(&[
+                        &record.id.to_string(),
+                        &record.title.unwrap_or_default(),
+                        &record.description.unwrap_or_default(),
+                        &organisms,
+                    ]).unwrap();
+                }
+                wtr.flush().unwrap();
+                wtr.flush().unwrap();
+            }
+        }
     }
 }
 
@@ -147,7 +210,7 @@ fn main() {
             output,
         } => match target {
             SupportedDatabase::OmicsDi => query_command_omicsdi(query, size, start, format, output),
-            SupportedDatabase::Ols => query_command_ols(query,  format, output),
+            SupportedDatabase::Ols => query_command_ols(query, format, output),
         },
     }
 }

@@ -288,7 +288,7 @@ pub mod data {
     use serde::Serializer;
     /// The link to the dataset enpoint
     use serde::{Deserialize, Serialize};
-
+    use serde_with::{serde_as, StringWithSeparator, formats::ColonSeparator};
     use serde::de::{self, Deserializer};
     #[derive(Deserialize, Serialize, Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
     pub struct OmicsDiResponse {
@@ -309,6 +309,7 @@ pub mod data {
         PartialOrd,
         Ord,
     )]
+    #[serde_as]
     #[ld(prefix("id" = "http://example.com/unprocessed"))]
     #[ld(prefix("ex" = "http://example.com/verbs/"))]
     #[ld(prefix("rdf" = ""))]
@@ -328,13 +329,15 @@ pub mod data {
         // #[ld(ignore)]
         // pub score: Option<u64>,
         // #[ld("ex:description")]
-        // pub description: Option<String>,
+         #[ld(ignore)]
+        pub description: Option<String>,
         #[ld(ignore)]
         // #[ld("ex:organism")]
         // #[serde(
         //     deserialize_with = "string_to_uri",
         //     serialize_with = "uri_to_string"
         // )]
+        #[serde(serialize_with = "serialize_organisms")]
         pub organisms: Option<Vec<Organism>>,
         // #[ld(ignore)]
         // pub publicationDate: Option<String>,
@@ -366,6 +369,40 @@ pub mod data {
         pub acc: String,
         #[ld("ex:aka")]
         pub name: String,
+    }
+
+    use serde::ser::SerializeSeq;
+
+
+    fn serialize_organisms<S>(
+        organisms: &Option<Vec<Organism>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match organisms {
+            // If there are muliple records; we serialise them with a :
+            // when in human mode.
+            Some(vec) => {
+                if !serializer.is_human_readable() {
+                    dbg!("Human read");
+                    let joined = vec
+                        .iter()
+                        .map(|o| o.name.clone())
+                        .collect::<Vec<_>>()
+                        .join(":");
+                    serializer.serialize_str(&joined)
+                } else {
+                    let mut seq = serializer.serialize_seq(Some(vec.len()))?;
+                    for organism in vec {
+                        seq.serialize_element(organism)?;
+                    }
+                    seq.end()
+                }
+            }
+            None => serializer.serialize_none(),
+        }
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
