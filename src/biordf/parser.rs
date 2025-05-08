@@ -1,13 +1,11 @@
+use crate::biordf::api::omicsdi::data::OmicsDiResponse;
+use crate::biordf::{
+    api::ols::api::SearchBuilder,
+    core::searching::{page, Pager, SearchSize},
+};
 use log::{self, info};
 use reqwest::blocking::get;
 use serde_json;
-
-use crate::biordf::{
-    core::searching::{page, Pager, SearchSize},
-    ols::api::SearchBuilder,
-};
-
-use super::omicsdi::data::OmicsDiResponse;
 
 #[derive(Debug, Clone)]
 enum QueryExpr {
@@ -55,7 +53,7 @@ fn tokenize_lisp_query(query: &str) -> Vec<String> {
 }
 
 fn resolve_tax_tree(id: u32) -> Vec<String> {
-    use crate::biordf::ols;
+    use crate::biordf::api::ols;
     info!("looking at the synonyms for {}", id);
     let mut builder = ols::api::SearchBuilder::default();
     let binding = id.clone().to_string();
@@ -117,7 +115,7 @@ impl Searching for OmicsDiResponse {
 }
 
 fn fetch_omicsdi_results(query: &str) -> Vec<OmicsDiResponse> {
-    use crate::biordf::omicsdi::api::SearchBuilder as omicsdiSearchBuilder;
+    use crate::biordf::api::omicsdi::api::SearchBuilder as omicsdiSearchBuilder;
     info!("Fetching omics results");
     let size = 1;
     let start = 1;

@@ -1,4 +1,4 @@
-[project]
+[projectileproject]
 authors = ["Sibbe Bakker <s.l.bakker@uu.nl>"]
 channels = ["conda-forge"]
 description = "Add a short description here"

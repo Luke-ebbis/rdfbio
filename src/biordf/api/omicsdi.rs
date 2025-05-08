@@ -1,42 +1,23 @@
-//! Interacting with the OLS
-//!
+//! Using the endpoint, access the datasets.
 
-/// Queries to the OLS v4 endpoint
+pub mod access {
+
+    pub enum Endpoints {
+        /// The OmicsDI endpoint
+        OmicsDI,
+    }
+}
+
 pub mod api {
 
     #![allow(non_snake_case)]
     #![allow(non_camel_case_types)]
-
-    #[derive(Default, Clone, Copy, PartialEq, PartialOrd, Eq, Debug, Ord)]
-    pub enum Ontologies {
-        #[default]
-        NcbiTaxon,
-    }
-
-    #[derive(Default, Clone, Copy, PartialEq, PartialOrd, Eq, Debug, Ord)]
-    pub enum Mode {
-        /// From id to synonyms
-        #[default]
-        Forward,
-        /// From synonym to identifiers
-        Backward,
-    }
-    impl fmt::Display for Ontologies {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            let out: &str = match &self {
-                Ontologies::NcbiTaxon => "ncbitaxon",
-            };
-
-            write!(f, "{}", out)
-        }
-    }
-
-    use crate::biordf::ols::data::ApiResponse;
+    use crate::biordf::api::omicsdi::data::OmicsDiResponse;
     use core::fmt;
     use derive_builder::Builder;
+    use std::str::FromStr;
 
     use iref::IriBuf;
-    use log::info;
     use reqwest::{self};
     // use serde::ser::StdError;
     use std::error::Error;
@@ -51,7 +32,6 @@ pub mod api {
     }
     use quick_xml::events::Event;
     use quick_xml::Reader;
-
     impl SearchError {
         /// Parse an XML error response and map it to `SearchError`
         fn from_xml(xml: &str) -> Self {
@@ -74,7 +54,22 @@ pub mod api {
                 }
             }
 
+            // Check if the error message contains "The start parameter (100) is bigger than or equal to the number of hits (94)."
+            if let Some((start, hits)) = Self::extract_start_error(&message) {
+                return SearchError::InvalidStartValue(start, hits);
+            }
+
             SearchError::Other(message)
+        }
+
+        /// Extract start and total hits from the error message
+        fn extract_start_error(message: &str) -> Option<(i32, i32)> {
+            let message = message.replace(",", ""); // Removes commas from numbers
+            let re = regex::Regex::new(r"The start parameter \((\d+)\) is bigger than or equal to the number of hits \((\d+)\)\.").ok()?;
+            let caps = re.captures(&message)?;
+            let start = caps.get(1)?.as_str().parse().ok()?;
+            let hits = caps.get(2)?.as_str().parse().ok()?;
+            Some((start, hits))
         }
     }
 
@@ -123,6 +118,18 @@ pub mod api {
         }
     }
 
+    #[derive(Clone, Debug)]
+    pub enum Domain {
+        /// The omics domain.
+        omics,
+        /// The Pride database
+        pride,
+        /// The massive domain.
+        MassIVE,
+        /// JPost domain.
+        jpost,
+    }
+
     /// The data fields of the dataset REST endpoint
     #[derive(Clone, Debug)]
     pub enum Field {
@@ -144,12 +151,12 @@ pub mod api {
     pub struct Search<'a> {
         // domain: Domain,
         /// General search term against multiple fields including, e.g: cancer human
-        query: &'a str,
-
-        #[builder(default=Ontologies::NcbiTaxon)]
-        pub(crate) ontology: Ontologies,
-        #[builder(default=Mode::Forward)]
-        pub(crate) mode: Mode,
+        pub(crate) query: &'a str,
+        // /// Field to sort the output of the search results, e.g: id, publication_date
+        #[builder(setter(into), default = "0")]
+        // sort: Option<Field>,
+        /// The start of the query. Increment this to page.
+        pub(crate) start: i32,
         /// Size of the return, needs to be below 1000.
         #[builder(setter(into), default = "2")]
         pub(crate) size: i32,
@@ -181,10 +188,17 @@ pub mod api {
             Self::validate_size(search_size)?;
             Ok(())
         }
+
+        pub fn get_query(&self) -> String {
+            match self.query {
+                Some(q) => q.to_string(),
+                None => "".to_string(),
+            }
+        }
     }
 
     impl Search<'_> {
-        const REST_URL: &'static str = "https://www.ebi.ac.uk/ols4/api/v2/ontologies/";
+        const REST_URL: &'static str = "https://www.omicsdi.org/ws/dataset/search";
         pub const MAX_REQUEST_SIZE: i32 = SearchBuilder::MAX_REQUEST_SIZE;
 
         pub fn total_hit(&self) -> Result<i32, SearchError> {
@@ -193,7 +207,7 @@ pub mod api {
             let hits = search.search();
             match hits {
                 Err(SearchError::InvalidStartValue(_, end)) => Ok(end),
-                Ok(r) => Ok(r.numElements as i32),
+                Ok(r) => Ok(r.count as i32),
                 Err(e) => Err(e),
             }
         }
@@ -201,22 +215,21 @@ pub mod api {
         fn request(
             params: Vec<(&str, &str)>,
             header: &str,
-            ontology: Ontologies,
-        ) -> Result<ApiResponse, SearchError> {
-            let url = format!("{}{}/classes", Self::REST_URL, ontology);
-            let url = reqwest::Url::parse_with_params(&url, params)
+        ) -> Result<OmicsDiResponse, SearchError> {
+            let url = Self::REST_URL;
+            let url = reqwest::Url::parse_with_params(url, params)
                 .map_err(|e| SearchError::UrlParseFailed(e.to_string()))?;
-            info!("Sending query: {}", url);
+            let url_string = url.clone().to_string();
             let client = reqwest::blocking::Client::new();
             let response = client
-                .get(url.clone())
+                .get(url)
                 .header("accept", header)
                 .send()
                 .map_err(|_| {
                     SearchError::RequestFailed(
                         reqwest::StatusCode::INTERNAL_SERVER_ERROR,
                         "Failed to send request".into(),
-                        url.to_string(),
+                        url_string.to_string(),
                     )
                 })?;
 
@@ -226,7 +239,20 @@ pub mod api {
             if status.is_success() {
                 let json_text: String = text;
                 let _ = super::data::check_for_null_fields(&json_text);
-                let deserialized: ApiResponse = serde_json::from_str(&json_text)?;
+                let mut deserialized: OmicsDiResponse = serde_json::from_str(&json_text)?;
+                let mut sets: Vec<super::data::DataSet> = Vec::new();
+                for ds in deserialized.datasets.clone().unwrap().iter_mut() {
+                    ds.id = IriBuf::from_str(&format!(
+                        "https://www.omicsdi.org/dataset/{}/{}",
+                        ds.source,
+                        ds.id
+                            .strip_prefix("https://www.omicsdi.org/dataset/")
+                            .unwrap()
+                    ))
+                    .unwrap_or(ds.id.clone());
+                    sets.push(ds.clone());
+                }
+                deserialized.datasets = Some(sets);
                 return Ok(deserialized);
             }
 
@@ -235,25 +261,16 @@ pub mod api {
         }
         /// Search the OmicsDi database with a search string.
         ///
-        pub fn search(self) -> Result<ApiResponse, SearchError> {
+        pub fn search(self) -> Result<OmicsDiResponse, SearchError> {
             let accept_header = "application/json";
-            let x = self.query.to_string();
+            let x = self.query;
+            let start = self.start;
             let size = self.size;
+            let start = start.to_string();
             let size = size.to_string();
-            match self.mode {
-                Mode::Backward => {
-                    let params: Vec<(&str, &str)> = vec![("size", &size), ("search", &x.as_str())];
-                    let out = Self::request(params, accept_header, self.ontology)?;
-                    Ok(out)
-                }
-
-                // curl -X 'GET' \
-                //  'https://www.ebi.ac.uk/ols4/api/v2/ontologies/ncbitaxon/classes/http%253A%252F%252Fpurl.obolibrary.org%252Fobo%252FNCBITaxon_2038151?lang=en' \
-                //   -H 'accept: application/json'
-                Mode::Forward => {
-                    todo!("Forward search not implemented")
-                }
-            }
+            let params = vec![("query", x), ("start", &start), ("size", &size)];
+            let out = Self::request(params, accept_header)?;
+            Ok(out)
         }
     }
 }
@@ -267,66 +284,104 @@ pub mod data {
     use std::collections::HashMap;
 
     use iref::IriBuf;
+    use linked_data;
     use serde::Serializer;
     /// The link to the dataset enpoint
     use serde::{Deserialize, Serialize};
 
     use serde::de::{self, Deserializer};
-    #[derive(Debug, Deserialize)]
-    pub(crate) struct ApiResponse {
-        pub(crate) page: u32,
-        pub(crate) numElements: u32,
-        pub(crate) elements: Vec<Element>,
+    #[derive(Deserialize, Serialize, Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+    pub struct OmicsDiResponse {
+        pub count: u64,
+        pub datasets: Option<Vec<DataSet>>,
+        // pub facets: Option<Vec<Facet>>,
     }
 
-    #[derive(Debug, Deserialize)]
-    pub(crate) struct Element {
-        pub(crate) appearsIn: Vec<String>,
-        pub(crate) curie: String,
-        pub(crate) definedBy: Vec<String>,
-        pub(crate) directAncestor: Option<Vec<String>>,
-        pub(crate) directParent: Option<Vec<String>>,
-        pub(crate) hasDirectChildren: bool,
-        pub(crate) hasDirectParents: bool,
-        pub(crate) hasHierarchicalChildren: bool,
-        pub(crate) hasHierarchicalParents: bool,
-        pub(crate) hierarchicalAncestor: Option<Vec<String>>,
-        pub(crate) hierarchicalParent: Option<Vec<String>>,
-        pub(crate) hierarchicalProperty: Option<String>,
-        pub(crate) imported: bool,
-        pub(crate) iri: String,
-        pub(crate) isDefiningOntology: bool,
-        pub(crate) isObsolete: bool,
-        pub(crate) isPreferredRoot: bool,
-        pub(crate) label: Vec<String>,
-        pub(crate) linkedEntities: Option<serde_json::Value>,
-
-        pub(crate) additional_fields: Option<HashMap<String, serde_json::Value>>,
+    #[derive(
+        serde::Serialize,
+        serde::Deserialize,
+        linked_data::Serialize,
+        linked_data::Deserialize,
+        Clone,
+        Debug,
+        Eq,
+        PartialEq,
+        PartialOrd,
+        Ord,
+    )]
+    #[ld(prefix("id" = "http://example.com/unprocessed"))]
+    #[ld(prefix("ex" = "http://example.com/verbs/"))]
+    #[ld(prefix("rdf" = ""))]
+    #[ld(type = "ex:OmicDiDataSet")]
+    pub struct DataSet {
+        #[ld(id)]
+        #[serde(deserialize_with = "string_to_uri", serialize_with = "uri_to_string")]
+        pub id: IriBuf,
+        #[ld("ex:source")]
+        #[serde(deserialize_with = "null_check")]
+        pub source: String,
+        #[ld("ex:title")]
+        // #[serde(deserialize_with = "null_check")]
+        pub title: Option<String>,
+        // #[ld(ignore)]
+        // pub keywords: Option<String>,
+        // #[ld(ignore)]
+        // pub score: Option<u64>,
+        // #[ld("ex:description")]
+        // pub description: Option<String>,
+        #[ld(ignore)]
+        // #[ld("ex:organism")]
+        // #[serde(
+        //     deserialize_with = "string_to_uri",
+        //     serialize_with = "uri_to_string"
+        // )]
+        pub organisms: Option<Vec<Organism>>,
+        // #[ld(ignore)]
+        // pub publicationDate: Option<String>,
+        // #[ld(ignore)]
+        // pub omicsType: Option<Vec<String>>,
+        // #[ld("ex:citations")]
+        // pub citationsCount: Option<u64>,
+        // #[ld(ignore)]
+        // #[serde(flatten)]
+        // pub extra_fields: HashMap<String, serde_json::Value>,
     }
 
-    pub struct LinkedEntity {
-        pub definedBy: Option<Vec<String>>,
-        pub numAppearsIn: Option<f64>,
-        pub hasLocalDefinition: Option<bool>,
-        pub label: Option<Vec<String>>,
-        pub curie: Option<String>,
-        pub r#type: Option<Vec<String>>,
-        pub url: Option<String>,
-        pub source: Option<String>,
+    #[ld(prefix("ex" = "http://example.org/verbs/"))]
+    // #[ld(type = "ex:OmicsDiOrganism")]
+    #[derive(
+        linked_data::Serialize,
+        linked_data::Deserialize,
+        Deserialize,
+        Serialize,
+        Debug,
+        Clone,
+        Eq,
+        PartialEq,
+        PartialOrd,
+        Ord,
+    )]
+    pub struct Organism {
+        #[ld("ex:taxid")]
+        pub acc: String,
+        #[ld("ex:aka")]
+        pub name: String,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
-    pub struct Synonym {
-        pub r#type: Vec<String>,
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub struct Facet {
+        pub id: String,
+        pub label: Option<String>,
+        pub total: u64,
+        pub facetValues: Option<Vec<FacetValue>>,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub struct FacetValue {
+        pub label: String,
         pub value: String,
-        pub axioms: Vec<SynonymAxiom>,
-    }
-
-    #[derive(Debug, Serialize, Deserialize)]
-    pub struct SynonymAxiom {
-        #[serde(rename = "http://www.geneontology.org/formats/oboInOwl#hasSynonymType")]
-        pub has_synonym_type: String,
-        pub oboSynonymTypeName: String,
+        #[serde(deserialize_with = "string_to_u64", serialize_with = "u64_to_string")]
+        pub count: u64,
     }
 
     fn null_check<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -384,7 +439,7 @@ pub mod data {
     fn check_for_null_fields_recursive(value: &Value, parent_key: &str) {
         match value {
             Value::Null => {
-                ()
+
                 // log::warn!("Field '{}' is null", parent_key);
             }
             Value::Object(map) => {
@@ -413,68 +468,94 @@ pub mod data {
 
 #[cfg(test)]
 mod tests {
+    #![allow(non_snake_case)]
+    #![allow(non_camel_case_types)]
     use std::error::Error;
-    use test_log::test;
 
-    use super::{api::SearchBuilder, data::ApiResponse};
+    use crate::biordf::{
+        core::searching::Pageable,
+        api::omicsdi::api::{SearchBuilder, SearchError},
+    };
 
+    /// Database connection check...
     #[test]
-    fn test_ols_taxa_parse() {
-        let json_data = r#"
-            {
-                "page": 0,
-                "numElements": 1,
-                "totalPages": 1,
-                "totalElements": 1,
-                "elements": [
-                    {
-                        "appearsIn": ["ons", "ncbitaxon", "foodon"],
-                        "curie": "NCBITaxon:34772",
-                        "definedBy": ["ncbitaxon"],
-                        "directAncestor": ["http://purl.obolibrary.org/obo/NCBITaxon_55119"],
-                        "directParent": ["http://purl.obolibrary.org/obo/NCBITaxon_55119"],
-                        "hasDirectChildren": true,
-                        "hasDirectParents": true,
-                        "hasHierarchicalChildren": true,
-                        "hasHierarchicalParents": true,
-                        "hierarchicalAncestor": ["http://purl.obolibrary.org/obo/NCBITaxon_55119"],
-                        "hierarchicalParent": ["http://purl.obolibrary.org/obo/NCBITaxon_55119"],
-                        "hierarchicalProperty": "http://www.w3.org/2000/01/rdf-schema#subClassOf",
-                        "imported": false,
-                        "iri": "http://purl.obolibrary.org/obo/NCBITaxon_34772",
-                        "isDefiningOntology": true,
-                        "isObsolete": false,
-                        "isPreferredRoot": false,
-                        "label": ["Alosa"],
-                        "linkedEntities": {
-                            "http://purl.obolibrary.org/obo/NCBITaxon_131567": {
-                                "definedBy": ["ncbitaxon"],
-                                "label": ["cellular organisms"],
-                                "curie": "NCBITaxon:131567"
-                            }
-                        }
-                    }
-                ]
-            }
-            "#;
+    fn test_input() -> Result<(), Box<dyn Error>> {
+        let mut x = SearchBuilder::default();
+        let q: String = "E-GEOD-5003".into();
+        let query = x.query(&q).build()?;
+        let results = query.search()?;
+        let first_identifier = results.clone().datasets.unwrap().pop().unwrap().id;
+        assert_eq!(
+            first_identifier,
+            "https://www.omicsdi.org/dataset/biostudies-arrayexpress/E-GEOD-5003"
+        );
 
-        let parsed: ApiResponse = serde_json::from_str(json_data).expect("Failed to parse JSON");
+        let _ = x.query("fish".into()).facet_size(1000).build()?;
+        Ok(())
+    }
+
+    #[should_panic]
+    #[test]
+    fn test_pre_search_validation_error_size_and_start() -> () {
+        let mut x = SearchBuilder::default();
+        let q: String = "E-GEOD-5003".into();
+        // This is invalid and should not be allowed.
+        let _ = x.query(&q).start(19).size(10005).build().unwrap();
     }
 
     #[test]
-    fn test_ols_ncbi() -> Result<(), Box<dyn Error>> {
+    /// For the mut, it alters all subsequent setters...
+    fn test_setters() -> Result<(), Box<dyn Error>> {
         let mut binding = SearchBuilder::default();
-        let ols_builder = binding
-            .query("Bremia")
-            .mode(crate::biordf::ols::api::Mode::Backward);
-        let result = ols_builder.build()?.search()?;
-        let element_1 = result.elements.get(0);
-        match element_1.clone() {
-            Some(e) => {
-                dbg!(&e.hierarchicalParent);
-            }
-            None => (),
-        }
+        let mut x = binding.start(1).size(10).query("s");
+        let x2 = x.start(30).size(100);
+        let test_start = x2.get_start()?;
+        let test_size = x2.build()?.size;
+        assert!(test_start == 30);
+        assert!(test_size == 100);
+        let other = x.get_start()?;
+        assert!(other == 30);
         Ok(())
+    }
+    #[should_panic]
+    #[test]
+    fn test_pre_search_validation_error_size() -> () {
+        let mut x = SearchBuilder::default();
+        let q: String = "E-GEOD-5003".into();
+        // This is invalid and should not be allowed.
+        let _ = x.query(&q).start(19).size(500000).build().unwrap();
+    }
+
+    #[test]
+    fn test_request_errors() -> Result<(), Box<dyn Error>> {
+        let mut x = SearchBuilder::default();
+        let q: String = "E-GEOD-5003".into();
+        // This is invalid and should not be allowed.
+        let r = x.query(&q).start(19).build().unwrap();
+        let out = r.search();
+        match out {
+            Err(SearchError::InvalidStartValue(start, total)) => {
+                assert!(start == 19);
+                assert!(total == 1);
+                Ok(())
+            }
+            Err(_) => Err(Box::from("Wrong error value")),
+            Ok(_) => Err(Box::from("this request should have failed")),
+        }
+    }
+    #[test]
+    fn test_request_errors_2() -> Result<(), Box<dyn Error>> {
+        let mut x = SearchBuilder::default();
+        let q = "E-GEOD-5003";
+        // This is invalid and should not be allowed.
+        let r = x.query(&q).build().unwrap();
+        let out = r.search();
+        match out {
+            Err(_) => Err(Box::from("Wrong error value")),
+            Ok(r) => {
+                assert!(r.count == 1);
+                Ok(())
+            }
+        }
     }
 }
