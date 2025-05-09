@@ -434,15 +434,24 @@ pub mod data {
     where
         D: Deserializer<'de>,
     {
-        let s: Vec<String> = Option::deserialize(deserializer)?.expect("msg");
-                let mut iri_vec = Vec::new();
-                for v in s  {
-                    // dbg!(&v);
+        let s: Option<Vec<String>> = Option::deserialize(deserializer)?;
+        let mut iri_vec = Vec::new();
+
+        match s {
+            Some(vec) => {
+                for v in vec {
                     let iri_string = format!("https://example.com/{}", v.replace(" ", "_"));
                     iri_vec.push(IriBuf::new(iri_string).map_err(de::Error::custom)?);
                 }
-                Ok(iri_vec)
+            },
+            None => {
+                let iri_string = "https://example.com/Unknown".to_string();
+                iri_vec.push(IriBuf::new(iri_string).map_err(de::Error::custom)?);
+            }
         }
+
+        Ok(iri_vec)
+    }
 
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
