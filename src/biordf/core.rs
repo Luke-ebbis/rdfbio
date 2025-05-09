@@ -162,10 +162,13 @@ pub mod identifiers {
 pub mod data {
     // TODO: here will be a method to request data from endpoints in various formats.
 
-    use iref::IriBuf;
-    use linked_data::IntoQuadsError;
+    use std::str::FromStr;
+
+    use iref::{Iri, IriBuf};
+    use linked_data_next::IntoQuadsError;
     use log::warn;
     use rdf_types::{Id, Literal, Quad, Term};
+    use uuid::{uuid, Uuid};
 
     use crate::biordf::api::omicsdi::data::{DataSet, OmicsDiResponse, Organism};
     pub fn dump_quads(quads: Vec<Quad<Id, IriBuf, Term>>) -> String {
@@ -186,19 +189,32 @@ pub mod data {
     impl ToRDF for DataSet {
         /// Serialise a Dataset to quads.
         fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
-            let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &self)?;
+            let quads = linked_data_next::to_quads(rdf_types::generator::Blank::new(), &self)?;
             Ok(quads)
         }
     }
 
     impl ToRDF for OmicsDiResponse {
         /// Serialise an omics Di response to quads.
-        /// Ignore the empty taxa slots...
+        ///
+        /// In this function, the OmiscDIResponse is filtered to remove empty text and standardise the
+        /// identifiers.
         fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
             let mut quads: Vec<Quad<Id, IriBuf, Term>> = Vec::new();
             for dataset in self.datasets.unwrap().iter() {
                 let quad_data = dataset.clone().to_quads()?;
                 let focus = dataset.clone().id;
+
+                // match dataset.clone().omicsType {
+                //     omicstypes => {
+                //         for ot in omicstypes {
+                //             let otq = ot.to_quads();
+                //         }
+                //     },
+                //     None => ()
+
+                // }
+
                 match dataset.clone().organisms {
                     Some(data) => {
                         // this part removes the empty taxon slots.
@@ -207,13 +223,32 @@ pub mod data {
                                 organism.to_quads()?;
                             for mut org_quads in organism_quads {
                                 org_quads.0 = rdf_types::Id::Iri(focus.clone());
-                                match org_quads.2.clone() {
-                                    rdf_types::Term::Literal(Literal { value: l, type_: _ }) => {
-                                        if !l.is_empty() {
-                                            quads.push(org_quads.to_owned());
+
+                                match org_quads.0 {
+                                    rdf_types::Id::Iri(id) => {
+                                        org_quads.0 = Id::Iri(
+                                            IriBuf::from_str(&format!(
+                                                "{}/{}",
+                                                focus.to_string(),
+                                                Uuid::new_v4()
+                                            ))
+                                            .unwrap(),
+                                        );
+                                        match org_quads.2.clone() {
+                                            rdf_types::Term::Literal(Literal {
+                                                value: l,
+                                                type_: _,
+                                            }) => {
+                                                if !l.is_empty() || l != "" {
+                                                    quads.push(org_quads.to_owned());
+                                                }
+                                            }
+                                            rdf_types::Term::Id(id) => {
+                                                quads.push(org_quads.to_owned());
+                                            }
                                         }
                                     }
-                                    rdf_types::Term::Id(_) => todo!(),
+                                    _ => (),
                                 }
                             }
                         }
@@ -233,7 +268,7 @@ pub mod data {
     impl ToRDF for Organism {
         /// Serialise an OmicsDi organism to quads.
         fn to_quads(self) -> Result<Vec<Quad<Id, IriBuf, Term>>, IntoQuadsError> {
-            let quads = linked_data::to_quads(rdf_types::generator::Blank::new(), &self)?;
+            let quads = linked_data_next::to_quads(rdf_types::generator::Blank::new(), &self)?;
             Ok(quads)
         }
     }
@@ -608,7 +643,7 @@ mod tests {
     use super::searching::page;
     #[test]
     fn test_ld() -> () {
-        #[derive(linked_data::Serialize, linked_data::Deserialize)]
+        #[derive(linked_data_next::Serialize, linked_data_next::Deserialize)]
         #[ld(prefix("ex" = "http://example.org/"))]
         struct Foo {
             #[ld(id)]
@@ -628,7 +663,7 @@ mod tests {
             alot: Vec<Nested>,
         }
 
-        #[derive(linked_data::Serialize, linked_data::Deserialize)]
+        #[derive(linked_data_next::Serialize, linked_data_next::Deserialize)]
         #[ld(prefix("ex" = "http://example.org/"))]
         #[ld(type = "ex:object")]
         struct Nested {

@@ -279,17 +279,26 @@ pub mod data {
 
     #![allow(non_snake_case)]
     #![allow(non_camel_case_types)]
+    use iref::IriBuf;
+    use linked_data_next::Serialize as ldSerialize;
+    use serde_with::SerializeDisplay;
+    use std::error::Error;
 
     use serde_json::Value;
     use std::collections::HashMap;
 
-    use iref::IriBuf;
-    use linked_data;
+    use linked_data_next;
+    use serde::de::{self, Deserializer};
     use serde::Serializer;
     /// The link to the dataset enpoint
     use serde::{Deserialize, Serialize};
-    use serde_with::{serde_as, StringWithSeparator, formats::ColonSeparator};
-    use serde::de::{self, Deserializer};
+    use serde_with::{formats::ColonSeparator, serde_as, StringWithSeparator};
+
+
+    use linked_data_next::{LinkedDataResource, LinkedDataSubject};
+    use rdf_types::{Interpretation, Vocabulary, Term};
+    use std::ops::Deref;
+
     #[derive(Deserialize, Serialize, Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
     pub struct OmicsDiResponse {
         pub count: u64,
@@ -300,8 +309,8 @@ pub mod data {
     #[derive(
         serde::Serialize,
         serde::Deserialize,
-        linked_data::Serialize,
-        linked_data::Deserialize,
+        linked_data_next::Serialize,
+        linked_data_next::Deserialize,
         Clone,
         Debug,
         Eq,
@@ -312,7 +321,8 @@ pub mod data {
     #[serde_as]
     #[ld(prefix("id" = "http://example.com/unprocessed"))]
     #[ld(prefix("ex" = "http://example.com/verbs/"))]
-    #[ld(prefix("rdf" = ""))]
+    #[ld(prefix("rdf" = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"))]
+    #[ld(prefix("dcterms" = "http://purl.org/dc/terms/" ))]
     #[ld(type = "ex:OmicDiDataSet")]
     pub struct DataSet {
         #[ld(id)]
@@ -321,28 +331,21 @@ pub mod data {
         #[ld("ex:source")]
         #[serde(deserialize_with = "null_check")]
         pub source: String,
-        #[ld("ex:title")]
-        // #[serde(deserialize_with = "null_check")]
+        #[ld("dcterms:title")]
         pub title: Option<String>,
         // #[ld(ignore)]
         // pub keywords: Option<String>,
         // #[ld(ignore)]
         // pub score: Option<u64>,
-        // #[ld("ex:description")]
-         #[ld(ignore)]
+        #[ld("dcterms:description")]
         pub description: Option<String>,
         #[ld(ignore)]
-        // #[ld("ex:organism")]
-        // #[serde(
-        //     deserialize_with = "string_to_uri",
-        //     serialize_with = "uri_to_string"
-        // )]
-        #[serde(serialize_with = "serialize_organisms")]
         pub organisms: Option<Vec<Organism>>,
-        // #[ld(ignore)]
-        // pub publicationDate: Option<String>,
-        // #[ld(ignore)]
-        // pub omicsType: Option<Vec<String>>,
+        #[ld(ignore)]
+        pub publicationDate: Option<String>,
+        #[ld("rdf:type")]
+        #[serde(deserialize_with = "vec_string_to_iri", serialize_with = "vec_iri_to_string")]
+        pub omicsType: Vec<IriBuf>,
         // #[ld("ex:citations")]
         // pub citationsCount: Option<u64>,
         // #[ld(ignore)]
@@ -350,11 +353,32 @@ pub mod data {
         // pub extra_fields: HashMap<String, serde_json::Value>,
     }
 
-    #[ld(prefix("ex" = "http://example.org/verbs/"))]
-    // #[ld(type = "ex:OmicsDiOrganism")]
+    use derive_more::Display;
     #[derive(
-        linked_data::Serialize,
-        linked_data::Deserialize,
+        Deserialize,
+        Serialize,
+        Debug,
+        Clone,
+        Eq,
+        PartialEq,
+        PartialOrd,
+        Ord,
+        Display
+    )]
+    pub enum OmicsType {
+        //  TODO
+        #[display("proteomics")]
+        Proteomics,
+        #[display("genomics")]
+        Genomics,
+        #[display("uknown")]
+        Unknown,
+        Multiomics,
+    }
+
+    #[derive(
+        linked_data_next::Serialize,
+        linked_data_next::Deserialize,
         Deserialize,
         Serialize,
         Debug,
@@ -364,6 +388,8 @@ pub mod data {
         PartialOrd,
         Ord,
     )]
+    #[ld(prefix("ex" = "http://example.org/verbs/"))]
+    #[ld(type = "ex:OmicsDiOrganism")]
     pub struct Organism {
         #[ld("ex:taxid")]
         pub acc: String,
@@ -373,37 +399,37 @@ pub mod data {
 
     use serde::ser::SerializeSeq;
 
-
-    fn serialize_organisms<S>(
-        organisms: &Option<Vec<Organism>>,
+    /// Serialize `Option<Vec<IriBuf>>` as a JSON array of strings
+    pub fn vec_iri_to_string<S>(
+        value: &Vec<IriBuf>,
         serializer: S,
     ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        match organisms {
-            // If there are muliple records; we serialise them with a :
-            // when in human mode.
-            Some(vec) => {
-                if !serializer.is_human_readable() {
-                    dbg!("Human read");
-                    let joined = vec
-                        .iter()
-                        .map(|o| o.name.clone())
-                        .collect::<Vec<_>>()
-                        .join(":");
-                    serializer.serialize_str(&joined)
-                } else {
-                    let mut seq = serializer.serialize_seq(Some(vec.len()))?;
-                    for organism in vec {
-                        seq.serialize_element(organism)?;
-                    }
-                    seq.end()
+        let vec = value;
+        let vec_len = Some(vec.len());
+                let mut seq = serializer.serialize_seq(vec_len)?;
+                for iri in vec {
+                    seq.serialize_element(iri.as_str())?;
                 }
-            }
-            None => serializer.serialize_none(),
+                seq.end()
         }
-    }
+
+    fn vec_string_to_iri<'de, D>(deserializer: D) -> Result<Vec<IriBuf>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s: Vec<String> = Option::deserialize(deserializer)?.expect("msg");
+                let mut iri_vec = Vec::new();
+                for v in s  {
+                    // dbg!(&v);
+                    let iri_string = format!("https://example.com/{}", v.replace(" ", "_"));
+                    iri_vec.push(IriBuf::new(iri_string).map_err(de::Error::custom)?);
+                }
+                Ok(iri_vec)
+        }
+
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
     pub struct Facet {
@@ -510,8 +536,8 @@ mod tests {
     use std::error::Error;
 
     use crate::biordf::{
-        core::searching::Pageable,
         api::omicsdi::api::{SearchBuilder, SearchError},
+        core::searching::Pageable,
     };
 
     /// Database connection check...
