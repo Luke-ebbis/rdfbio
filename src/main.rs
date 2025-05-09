@@ -4,6 +4,7 @@ use csv::Writer as CsvWriter;
 use csv::WriterBuilder as CsvWriterBuilder;
 use rdfbio::biordf;
 use rdfbio::biordf::core::searching::{page, Pager};
+use rdfbio::biordf::io::formats::csv::write_omicsdi;
 use rdfbio::biordf::{
     api::ols::api::SearchBuilder as OlssearchBuilder,
     api::omicsdi::api::SearchBuilder as OmicsDIsearchBuilder,
@@ -148,50 +149,7 @@ fn query_command_omicsdi(
             }
         }
         OutputFormat::Csv => {
-            if let Some(file) = output {
-                let mut file = OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .open(file).expect("File cannot open");
-                let mut wtr = csv::WriterBuilder::new()
-                    .from_writer(file);
-                wtr.write_record(&["id",
-                                   "title",
-                                   "description",
-                                   "organisms"]).unwrap();
-                for record in results.datasets.unwrap() {
-                    let organisms = match &record.organisms {
-                        Some(vec) => vec.iter().map(|o| o.name.clone()).collect::<Vec<_>>().join(":"),
-                        None => String::new(),
-                    };
-
-                    wtr.write_record(&[
-                        &record.id.to_string(),
-                        &record.title.unwrap_or_default(),
-                        &record.description.unwrap_or_default(),
-                        &organisms,
-                    ]).unwrap();
-                }
-                wtr.flush().unwrap();
-            } else {
-                let mut wtr = csv::WriterBuilder::new()
-                    .from_writer(io::stdout());
-                for record in results.datasets.unwrap() {
-                    let organisms = match &record.organisms {
-                        Some(vec) => vec.iter().map(|o| o.name.clone()).collect::<Vec<_>>().join(":"),
-                        None => String::new(),
-                    };
-
-                    wtr.write_record(&[
-                        &record.id.to_string(),
-                        &record.title.unwrap_or_default(),
-                        &record.description.unwrap_or_default(),
-                        &organisms,
-                    ]).unwrap();
-                }
-                wtr.flush().unwrap();
-                wtr.flush().unwrap();
-            }
+            write_omicsdi(results, output).unwrap();
         }
     }
 }
