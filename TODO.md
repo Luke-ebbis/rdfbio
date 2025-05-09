@@ -9,3 +9,5 @@ include a copy of uniprot taxa.
 do benching
 
 Convert to rayon
+
+You can use fasttax for generating NCBI based taxonomic trees.
