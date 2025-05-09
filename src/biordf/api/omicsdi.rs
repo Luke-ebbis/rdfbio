@@ -239,6 +239,7 @@ pub mod api {
             if status.is_success() {
                 let json_text: String = text;
                 let _ = super::data::check_for_null_fields(&json_text);
+
                 let mut deserialized: OmicsDiResponse = serde_json::from_str(&json_text)?;
                 let mut sets: Vec<super::data::DataSet> = Vec::new();
                 for ds in deserialized.datasets.clone().unwrap().iter_mut() {
@@ -251,6 +252,7 @@ pub mod api {
                     ))
                     .unwrap_or(ds.id.clone());
                     sets.push(ds.clone());
+
                 }
                 deserialized.datasets = Some(sets);
                 return Ok(deserialized);
@@ -315,8 +317,8 @@ pub mod data {
         Debug,
         Eq,
         PartialEq,
-        PartialOrd,
-        Ord,
+        // PartialOrd,
+        // Ord,
     )]
     #[serde_as]
     #[ld(prefix("id" = "http://example.com/unprocessed"))]
@@ -348,9 +350,21 @@ pub mod data {
         pub omicsType: Vec<IriBuf>,
         // #[ld("ex:citations")]
         // pub citationsCount: Option<u64>,
-        // #[ld(ignore)]
-        // #[serde(flatten)]
-        // pub extra_fields: HashMap<String, serde_json::Value>,
+        #[ld(ignore)]
+        #[serde(flatten)]
+        pub extra_fields: HashMap<String, serde_json::Value>,
+    }
+    impl PartialOrd for DataSet {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            // Compare only some fields — adapt as needed
+            self.id.partial_cmp(&other.id)
+        }
+    }
+
+    impl Ord for DataSet {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            self.id.cmp(&other.id)
+        }
     }
 
     use derive_more::Display;
